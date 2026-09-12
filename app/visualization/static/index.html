@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="version" content="2.1.0-live">
+  <meta name="version" content="3.0.0-foveated">
   <title>OCULUS | Perception-Guided Adaptive 2.5D LiDAR Mapping</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -112,6 +112,23 @@
         <div class="phase-overlay" id="phase-overlay">
           <span class="phase-title" id="phase-title">Urban Cruising</span>
           <span class="phase-desc" id="phase-desc">Continuous live perception stream</span>
+        </div>
+
+        <!-- Foveated Radial Grid Legend (Autonomous Driving Research HUD) -->
+        <div class="foveated-legend-card" id="foveated-legend">
+          <div class="legend-header">Grid Resolution (cell size)</div>
+          <div class="legend-row">
+            <span class="legend-swatch swatch-very-fine"></span>
+            <span class="legend-text">Very Fine (~0.05 – 0.1 m)</span>
+          </div>
+          <div class="legend-row">
+            <span class="legend-swatch swatch-medium"></span>
+            <span class="legend-text">Fine / Medium (~0.1 – 0.2 m)</span>
+          </div>
+          <div class="legend-row">
+            <span class="legend-swatch swatch-coarse"></span>
+            <span class="legend-text">Coarse (~0.4 – 0.8 m)</span>
+          </div>
         </div>
       </div>
 

@@ -95,6 +95,31 @@
     4: '#3b82f6', 5: '#ef4444', 6: '#a855f7', 7: '#0ea5e9'
   };
 
+  // RADIAL / FOVEATED ADAPTIVE GRID FIELD ZONES (AUTONOMOUS RESEARCH PRESENTATION)
+  // STRICT COLOR HIERARCHY: RED = FINE (0–10m), YELLOW = MEDIUM (10–30m), BLUE = COARSE (30–85m)
+  const RADIAL_ZONES = [
+    // Zone 1: VERY FINE (0–10 m) - Level 0 (5 cm, RED)
+    { r1: 0.0, r2: 2.5, lvl: 0, res: 0.05, zone: 'fine', color: 'rgba(239, 68, 68, 0.44)', stroke: 'rgba(248, 113, 113, 0.48)' },
+    { r1: 2.5, r2: 5.0, lvl: 0, res: 0.05, zone: 'fine', color: 'rgba(239, 68, 68, 0.40)', stroke: 'rgba(248, 113, 113, 0.44)' },
+    { r1: 5.0, r2: 7.5, lvl: 0, res: 0.05, zone: 'fine', color: 'rgba(239, 68, 68, 0.36)', stroke: 'rgba(248, 113, 113, 0.40)' },
+    { r1: 7.5, r2: 10.0, lvl: 0, res: 0.05, zone: 'fine', color: 'rgba(239, 68, 68, 0.32)', stroke: 'rgba(248, 113, 113, 0.36)' },
+
+    // Zone 2: FINE / MEDIUM (10–30 m) - Level 1 & 2 (10–20 cm, YELLOW)
+    { r1: 10.0, r2: 15.0, lvl: 1, res: 0.10, zone: 'medium', color: 'rgba(245, 158, 11, 0.32)', stroke: 'rgba(251, 191, 36, 0.38)' },
+    { r1: 15.0, r2: 20.0, lvl: 1, res: 0.10, zone: 'medium', color: 'rgba(234, 179, 8, 0.28)', stroke: 'rgba(250, 204, 21, 0.34)' },
+    { r1: 20.0, r2: 25.0, lvl: 2, res: 0.20, zone: 'medium', color: 'rgba(234, 179, 8, 0.25)', stroke: 'rgba(250, 204, 21, 0.30)' },
+    { r1: 25.0, r2: 30.0, lvl: 2, res: 0.20, zone: 'medium', color: 'rgba(202, 138, 4, 0.22)', stroke: 'rgba(234, 179, 8, 0.28)' },
+
+    // Zone 3: COARSE (30–85 m) - Level 3 & 4 (40–80 cm, BLUE)
+    { r1: 30.0, r2: 42.0, lvl: 3, res: 0.40, zone: 'coarse', color: 'rgba(2, 132, 199, 0.20)', stroke: 'rgba(56, 189, 248, 0.24)' },
+    { r1: 42.0, r2: 56.0, lvl: 3, res: 0.40, zone: 'coarse', color: 'rgba(3, 105, 161, 0.17)', stroke: 'rgba(56, 189, 248, 0.20)' },
+    { r1: 56.0, r2: 70.0, lvl: 4, res: 0.80, zone: 'coarse', color: 'rgba(30, 64, 175, 0.15)', stroke: 'rgba(96, 165, 250, 0.18)' },
+    { r1: 70.0, r2: 85.0, lvl: 4, res: 0.80, zone: 'coarse', color: 'rgba(30, 58, 138, 0.12)', stroke: 'rgba(96, 165, 250, 0.16)' }
+  ];
+
+  const NUM_SECTORS = 32;
+  const SECTOR_ANGLE = (2 * Math.PI) / NUM_SECTORS;
+
   // Trajectory Math: Continuous ego vehicle pose across the 180s route
   // Uses exact analytical derivatives: yaw(t) = atan2(vy, vx) smoothly aligned before & during turns
   function getEgoPose(tSec) {
@@ -281,14 +306,14 @@
       drawWorldMap(worldMapData, ego);
     }
 
-    // 2. Draw Range Rings & Rotating LiDAR FOV Cone (Centered on Ego Vehicle)
-    if (chkRings.checked) {
-      drawRangeRingsAndFov(ego);
+    // 2. Draw Radial / Foveated Adaptive Grid Field (Concentric Red/Yellow/Blue Resolution)
+    if (chkGrid.checked) {
+      drawRadialFoveatedAdaptiveGrid(ego, currentFrameData);
     }
 
-    // 3. Draw Adaptive Grid Cells (Transformed to World Coordinates)
-    if (chkGrid.checked && currentFrameData && currentFrameData.active_cells) {
-      drawAdaptiveGridCells(currentFrameData.active_cells, ego);
+    // 3. Draw Range Rings & Rotating LiDAR FOV Cone (Centered on Ego Vehicle)
+    if (chkRings.checked) {
+      drawRangeRingsAndFov(ego);
     }
 
     // 4. Draw Sampled LiDAR Points
@@ -404,6 +429,37 @@
         ctx.arc(pt.px, pt.py, 14, 0, 2 * Math.PI);
         ctx.fillStyle = 'rgba(251, 191, 36, 0.04)';
         ctx.fill();
+
+        // Research Callout [ Pole ] matching reference image when within sensor range
+        const distEgoPole = Math.hypot(p.x - ego.x, p.y - ego.y);
+        if (distEgoPole <= 38.0) {
+          // Yellow ground target ring on curb
+          ctx.beginPath();
+          ctx.arc(pt.px, pt.py, 8, 0, 2 * Math.PI);
+          ctx.strokeStyle = '#facc15';
+          ctx.lineWidth = 1.6;
+          ctx.stroke();
+
+          // Pointer line and callout pill
+          ctx.strokeStyle = 'rgba(248, 250, 252, 0.85)';
+          ctx.lineWidth = 1.0;
+          ctx.beginPath();
+          ctx.moveTo(pt.px + 6, pt.py - 6);
+          ctx.lineTo(pt.px + 20, pt.py - 18);
+          ctx.lineTo(pt.px + 36, pt.py - 18);
+          ctx.stroke();
+
+          ctx.fillStyle = 'rgba(10, 16, 28, 0.92)';
+          ctx.fillRect(pt.px + 36, pt.py - 28, 40, 20);
+          ctx.strokeStyle = '#facc15';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(pt.px + 36, pt.py - 28, 40, 20);
+
+          ctx.fillStyle = '#f8fafc';
+          ctx.font = 'bold 9px JetBrains Mono, monospace';
+          ctx.fillText('Pole', pt.px + 45, pt.py - 14);
+        }
+
         ctx.restore();
       });
     }
@@ -473,6 +529,28 @@
       ctx.fillStyle = '#f59e0b';
       ctx.font = 'bold 8px JetBrains Mono, monospace';
       ctx.fillText("⚠ ROAD WORK BARRIER", -bdx / 2 + 4, -bdy / 2 - 4);
+
+      // Research Callout: [ Obstacle ] matching reference image
+      const distEgoBarrier = Math.hypot(b.x - ego.x, b.y - ego.y);
+      if (distEgoBarrier <= 65.0) {
+        ctx.strokeStyle = 'rgba(248, 250, 252, 0.85)';
+        ctx.lineWidth = 1.0;
+        ctx.beginPath();
+        ctx.moveTo(bdx / 2, 0);
+        ctx.lineTo(bdx / 2 + 18, -16);
+        ctx.lineTo(bdx / 2 + 34, -16);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(10, 16, 28, 0.92)';
+        ctx.fillRect(bdx / 2 + 34, -26, 62, 20);
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(bdx / 2 + 34, -26, 62, 20);
+
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = 'bold 9px JetBrains Mono, monospace';
+        ctx.fillText('Obstacle', bdx / 2 + 40, -12);
+      }
       ctx.restore();
     }
 
@@ -505,23 +583,29 @@
   // --------------------------------------------------------------------------
   function drawRangeRingsAndFov(ego) {
     const center = worldToCanvas(ego.x, ego.y);
-    const rings = [10, 25, 50, 80];
+    const rings = [
+      { r: 10, label: '10m (Fine 5cm)', color: 'rgba(239, 68, 68, 0.85)' },
+      { r: 25, label: '25m (Medium 10-20cm)', color: 'rgba(234, 179, 8, 0.85)' },
+      { r: 50, label: '50m (Coarse 40cm)', color: 'rgba(56, 189, 248, 0.80)' },
+      { r: 80, label: '80m (Far 80cm)', color: 'rgba(96, 165, 250, 0.75)' }
+    ];
 
     ctx.save();
 
-    // Range Rings
-    rings.forEach(r => {
-      const rPx = r * scale;
+    // Range Rings with crisp dashed stroke
+    rings.forEach(ring => {
+      const rPx = ring.r * scale;
       ctx.beginPath();
       ctx.arc(center.px, center.py, rPx, 0, 2 * Math.PI);
-      ctx.strokeStyle = 'rgba(0, 240, 255, 0.10)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = 'rgba(0, 240, 255, 0.25)';
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([5, 4]);
       ctx.stroke();
 
-      ctx.fillStyle = 'rgba(0, 240, 255, 0.35)';
-      ctx.font = '9px JetBrains Mono, monospace';
-      ctx.fillText(`${r}m`, center.px + 5, center.py - rPx - 3);
+      // Metric distance label
+      ctx.fillStyle = ring.color;
+      ctx.font = 'bold 9px JetBrains Mono, monospace';
+      ctx.fillText(ring.label, center.px + 6, center.py - rPx - 4);
     });
 
     // Rotating Forward FOV LiDAR Cone (+/- 50 deg aligned with ego yaw)
@@ -537,10 +621,10 @@
     ctx.arc(center.px, center.py, fovDistPx, a1, a2);
     ctx.closePath();
 
-    ctx.fillStyle = 'rgba(0, 240, 255, 0.025)';
+    ctx.fillStyle = 'rgba(0, 240, 255, 0.03)';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(0, 240, 255, 0.15)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.20)';
+    ctx.lineWidth = 1.2;
     ctx.setLineDash([4, 4]);
     ctx.stroke();
 
@@ -733,44 +817,189 @@
     ctx.lineWidth = 1.2;
     ctx.stroke();
 
+    // Research Callout: [ LiDAR ] matching reference image
+    ctx.save();
+    ctx.rotate(yawRad); // Keep text upright on screen
+    ctx.strokeStyle = 'rgba(248, 250, 252, 0.85)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(26, -20);
+    ctx.lineTo(44, -20);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(10, 16, 28, 0.92)';
+    ctx.fillRect(44, -30, 48, 20);
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.65)';
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(44, -30, 48, 20);
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = 'bold 9px JetBrains Mono, monospace';
+    ctx.fillText('LiDAR', 51, -16);
+    ctx.restore();
+
     ctx.restore();
   }
 
   // --------------------------------------------------------------------------
-  // 4. ADAPTIVE GRID CELLS (TRANSFORMED FROM SENSOR FRAME TO WORLD FRAME)
+  // 4. RADIAL / FOVEATED ADAPTIVE GRID FIELD (MATCHING REFERENCE RESEARCH VISUAL)
+  // Concentric Rings: RED (0-10m: 5cm) -> YELLOW (10-30m: 10-20cm) -> BLUE (30-85m: 40-80cm)
+  // Dynamic Refinement: High-importance actors refine locally to RED / YELLOW
   // --------------------------------------------------------------------------
-  function drawAdaptiveGridCells(cells, ego) {
-    ctx.save();
+  function drawRadialFoveatedAdaptiveGrid(ego, frameData) {
+    const center = worldToCanvas(ego.x, ego.y);
     const yawRad = (ego.yaw * Math.PI) / 180.0;
-    const cosA = Math.cos(yawRad);
-    const sinA = Math.sin(yawRad);
 
-    cells.forEach(cell => {
-      // Local cell center -> World frame
-      const wx = ego.x + cell.cx * cosA - cell.cy * sinA;
-      const wy = ego.y + cell.cx * sinA + cell.cy * cosA;
+    ctx.save();
 
-      const pCenter = worldToCanvas(wx, wy);
-      const cellSizePx = cell.res * scale;
+    // Check dynamic refinement targets in world space
+    let pedWorld = null;
+    if (simTime >= 70.0 && simTime <= 105.0) {
+      const pProg = (simTime - 70.0) / 35.0;
+      const px = 310.0 + 20.0 * pProg;
+      pedWorld = { x: px, y: 98.0, inLane: (px >= 318.0 && px <= 322.5) };
+    }
 
-      // Color scheme based on active layer
-      if (chkDanger.checked) {
-        ctx.fillStyle = cell.d_lvl === 'DANGER' ? 'rgba(239, 68, 68, 0.70)' :
-                        (cell.d_lvl === 'WARNING' ? 'rgba(249, 115, 22, 0.55)' :
-                        (cell.d_lvl === 'CAUTION' ? 'rgba(245, 158, 11, 0.40)' : 'rgba(16, 185, 129, 0.15)'));
-      } else if (chkElevation.checked) {
-        const normElev = Math.min(Math.max((cell.elev + 2.0) / 4.0, 0.0), 1.0);
-        ctx.fillStyle = `rgba(${Math.floor(normElev * 255)}, ${Math.floor((1 - normElev) * 200)}, 255, 0.42)`;
-      } else {
-        // STRICT HIERARCHICAL COLOR: RED = 5cm, YELLOW = 10-20cm, BLUE = 40-80cm
-        ctx.fillStyle = LEVEL_COLORS[cell.lvl] || LEVEL_COLORS[4];
+    let oncWorld = null;
+    if (simTime >= 105.0 && simTime <= 145.0) {
+      const vProg = (simTime - 105.0) / 40.0;
+      oncWorld = { x: 316.0, y: 270.0 - 190.0 * vProg };
+    }
+
+    // Static Barrier world coordinate
+    const barrierWorld = { x: 205.0, y: 8.0 };
+
+    // Render each annular sector cell in the foveated resolution field
+    RADIAL_ZONES.forEach((ring) => {
+      const r1Px = ring.r1 * scale;
+      const r2Px = ring.r2 * scale;
+
+      for (let s = 0; s < NUM_SECTORS; s++) {
+        // Sector angles rotated with vehicle heading
+        const a1 = -yawRad + s * SECTOR_ANGLE;
+        const a2 = -yawRad + (s + 1) * SECTOR_ANGLE;
+
+        // Sector center in world coordinates
+        const midR = (ring.r1 + ring.r2) / 2.0;
+        const midA = -yawRad + (s + 0.5) * SECTOR_ANGLE;
+        const worldAngle = -midA;
+        const cellWx = ego.x + midR * Math.cos(worldAngle);
+        const cellWy = ego.y + midR * Math.sin(worldAngle);
+
+        // Check perception refinement
+        let isRefined = false;
+        let refineType = null;
+
+        if (pedWorld) {
+          const dPed = Math.hypot(pedWorld.x - ego.x, pedWorld.y - ego.y);
+          const aPed = Math.atan2(pedWorld.y - ego.y, pedWorld.x - ego.x);
+          const normPedA = ((aPed + yawRad) % (2 * Math.PI) + (2 * Math.PI)) % (2 * Math.PI);
+          const pedSec = Math.floor(normPedA / SECTOR_ANGLE);
+          if (Math.abs(s - pedSec) <= 1 && ring.r1 <= dPed && ring.r2 >= dPed) {
+            isRefined = true;
+            refineType = pedWorld.inLane ? 'DANGER_VRU' : 'CAUTION_VRU';
+          }
+        }
+
+        if (!isRefined && oncWorld) {
+          const dCar = Math.hypot(oncWorld.x - ego.x, oncWorld.y - ego.y);
+          const aCar = Math.atan2(oncWorld.y - ego.y, oncWorld.x - ego.x);
+          const normCarA = ((aCar + yawRad) % (2 * Math.PI) + (2 * Math.PI)) % (2 * Math.PI);
+          const carSec = Math.floor(normCarA / SECTOR_ANGLE);
+          if (Math.abs(s - carSec) <= 1 && ring.r1 <= dCar && ring.r2 >= dCar) {
+            isRefined = true;
+            refineType = 'ONCOMING';
+          }
+        }
+
+        if (!isRefined) {
+          const dBar = Math.hypot(barrierWorld.x - ego.x, barrierWorld.y - ego.y);
+          const aBar = Math.atan2(barrierWorld.y - ego.y, barrierWorld.x - ego.x);
+          const normBarA = ((aBar + yawRad) % (2 * Math.PI) + (2 * Math.PI)) % (2 * Math.PI);
+          const barSec = Math.floor(normBarA / SECTOR_ANGLE);
+          if (Math.abs(s - barSec) <= 1 && ring.r1 <= dBar && ring.r2 >= dBar) {
+            isRefined = true;
+            refineType = 'BARRIER';
+          }
+        }
+
+        // Determine Cell Color based on mode / active layer
+        let cellFill = ring.color;
+        let cellStroke = ring.stroke;
+        let lineWidth = 0.6;
+
+        if (uniformMode) {
+          // Uniform 5cm mode: All cells uniform fine red/amber
+          cellFill = 'rgba(239, 68, 68, 0.36)';
+          cellStroke = 'rgba(248, 113, 113, 0.45)';
+          lineWidth = 0.8;
+        } else if (chkDanger.checked) {
+          if (refineType === 'DANGER_VRU') {
+            cellFill = 'rgba(239, 68, 68, 0.75)';
+            cellStroke = '#ef4444';
+            lineWidth = 1.2;
+          } else if (refineType === 'ONCOMING' || refineType === 'CAUTION_VRU' || refineType === 'BARRIER') {
+            cellFill = 'rgba(249, 115, 22, 0.60)';
+            cellStroke = '#f97316';
+            lineWidth = 1.0;
+          } else {
+            cellFill = 'rgba(16, 185, 129, 0.16)';
+            cellStroke = 'rgba(16, 185, 129, 0.25)';
+          }
+        } else if (chkElevation.checked) {
+          const isBridge = cellWy >= 260.0;
+          const elev = isBridge ? Math.min(3.4, (cellWy - 260.0) * 0.08) : (Math.abs(cellWy) >= 5.5 ? 0.15 : 0.0);
+          const normE = Math.min(1.0, Math.max(0.0, (elev + 1.0) / 4.0));
+          cellFill = `rgba(${Math.floor(normE * 255)}, ${Math.floor((1 - normE) * 200)}, 255, 0.38)`;
+          cellStroke = 'rgba(186, 230, 253, 0.35)';
+        } else if (isRefined) {
+          // Dynamic Perception-Guided Refinement Bubble
+          if (refineType === 'DANGER_VRU') {
+            cellFill = 'rgba(239, 68, 68, 0.65)';
+            cellStroke = '#f87171';
+            lineWidth = 1.4;
+          } else {
+            cellFill = 'rgba(245, 158, 11, 0.52)';
+            cellStroke = '#fbbf24';
+            lineWidth = 1.2;
+          }
+        }
+
+        // Draw Annular Sector Wedge
+        ctx.beginPath();
+        ctx.arc(center.px, center.py, r2Px, a1, a2, false);
+        ctx.arc(center.px, center.py, r1Px, a2, a1, true);
+        ctx.closePath();
+
+        ctx.fillStyle = cellFill;
+        ctx.fill();
+
+        ctx.strokeStyle = cellStroke;
+        ctx.lineWidth = lineWidth;
+        ctx.stroke();
+
+        // If refined, draw fine radial & circumferential sub-grid lines (Level 0 / Level 1 subdivision)
+        if (isRefined) {
+          const midR_Px = (r1Px + r2Px) / 2.0;
+          const midA_sub = (a1 + a2) / 2.0;
+
+          // Circumferential subdivision arc
+          ctx.beginPath();
+          ctx.arc(center.px, center.py, midR_Px, a1, a2, false);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+          ctx.lineWidth = 0.8;
+          ctx.setLineDash([2, 2]);
+          ctx.stroke();
+
+          // Radial subdivision ray
+          ctx.beginPath();
+          ctx.moveTo(center.px + r1Px * Math.cos(midA_sub), center.py + r1Px * Math.sin(midA_sub));
+          ctx.lineTo(center.px + r2Px * Math.cos(midA_sub), center.py + r2Px * Math.sin(midA_sub));
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
       }
-
-      ctx.fillRect(pCenter.px - cellSizePx / 2, pCenter.py - cellSizePx / 2, cellSizePx, cellSizePx);
-
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
-      ctx.lineWidth = 0.5;
-      ctx.strokeRect(pCenter.px - cellSizePx / 2, pCenter.py - cellSizePx / 2, cellSizePx, cellSizePx);
     });
 
     ctx.restore();
@@ -787,13 +1016,20 @@
 
     for (let i = 0; i < points.length; i++) {
       const pt = points[i];
+      const dist = Math.hypot(pt[0], pt[1]);
+
+      // Adaptive Point Cloud detail: High detail near ego; reduced density far
+      if (dist > 70.0 && (i % 3 !== 0)) continue;
+      if (dist > 45.0 && (i % 2 !== 0)) continue;
+
       const wx = ego.x + pt[0] * cosA - pt[1] * sinA;
       const wy = ego.y + pt[0] * sinA + pt[1] * cosA;
       const p = worldToCanvas(wx, wy);
       const semClass = (labels && chkSemantics.checked) ? labels[i] : 1;
 
       ctx.fillStyle = SEM_COLORS[semClass] || '#00f0ff';
-      ctx.fillRect(p.px - 0.9, p.py - 0.9, 1.8, 1.8);
+      const ptSize = dist <= 15.0 ? 2.2 : (dist <= 35.0 ? 1.8 : 1.3);
+      ctx.fillRect(p.px - ptSize / 2, p.py - ptSize / 2, ptSize, ptSize);
     }
     ctx.restore();
   }
@@ -829,17 +1065,33 @@
       ctx.fillStyle = '#f8fafc';
       ctx.fill();
 
-      // 3D Bounding Box
+      // 3D Bounding Box with corner brackets matching reference
       ctx.strokeStyle = pedColor;
-      ctx.lineWidth = 1.6;
-      ctx.strokeRect(-8, -8, 16, 16);
+      ctx.lineWidth = 1.8;
+      ctx.strokeRect(-9, -9, 18, 18);
 
-      // Warning Badge
-      ctx.fillStyle = 'rgba(6, 9, 19, 0.88)';
-      ctx.fillRect(-38, -25, 76, 14);
+      // Research Callout: [ Pedestrian ] matching reference image
+      ctx.strokeStyle = 'rgba(248, 250, 252, 0.85)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(9, 0);
+      ctx.lineTo(24, -14);
+      ctx.lineTo(40, -14);
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(10, 16, 28, 0.92)';
+      ctx.fillRect(40, -26, 78, 22);
+      ctx.strokeStyle = pedColor;
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(40, -26, 78, 22);
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 9px JetBrains Mono, monospace';
+      ctx.fillText('Pedestrian', 46, -11);
+
       ctx.fillStyle = pedColor;
-      ctx.font = 'bold 8px JetBrains Mono, monospace';
-      ctx.fillText(`PEDESTRIAN [${pedDanger}]`, -34, -15);
+      ctx.font = 'bold 7.5px JetBrains Mono, monospace';
+      ctx.fillText(pedDanger, 46, -2);
 
       // Local Adaptive Refinement Bubble (5cm RED trigger) around DANGER pedestrian
       if (inLane) {
@@ -886,12 +1138,27 @@
       ctx.fillRect(oL * 0.46, -oW * 0.4, oL * 0.04, oW * 0.2);
       ctx.fillRect(oL * 0.46, oW * 0.2, oL * 0.04, oW * 0.2);
 
-      // Warning Badge
-      ctx.fillStyle = 'rgba(6, 9, 19, 0.88)';
-      ctx.fillRect(-35, -oW / 2 - 18, 70, 14);
-      ctx.fillStyle = '#f59e0b';
-      ctx.font = 'bold 8px JetBrains Mono, monospace';
-      ctx.fillText("ONCOMING [18 km/h]", -31, -oW / 2 - 8);
+      // Research Callout [ Vehicle ]
+      ctx.save();
+      ctx.rotate(-Math.PI / 2); // Keep upright
+      ctx.strokeStyle = 'rgba(248, 250, 252, 0.85)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(oW / 2, 0);
+      ctx.lineTo(oW / 2 + 16, -14);
+      ctx.lineTo(oW / 2 + 30, -14);
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(10, 16, 28, 0.92)';
+      ctx.fillRect(oW / 2 + 30, -26, 60, 20);
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(oW / 2 + 30, -26, 60, 20);
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 9px JetBrains Mono, monospace';
+      ctx.fillText('Vehicle', oW / 2 + 38, -12);
+      ctx.restore();
 
       // Refinement bubble
       ctx.beginPath();
@@ -924,7 +1191,19 @@
     ctx.shadowColor = 'rgba(0, 240, 255, 0.7)';
     ctx.shadowBlur = 8;
 
-    if (entity.dimensions) {
+    if (entity.radial_cell) {
+      const rc = entity.radial_cell;
+      const c = worldToCanvas(rc.cx, rc.cy);
+      ctx.beginPath();
+      ctx.arc(c.px, c.py, rc.r2 * scale, rc.a1, rc.a2, false);
+      ctx.arc(c.px, c.py, rc.r1 * scale, rc.a2, rc.a1, true);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(0, 240, 255, 0.28)';
+      ctx.fill();
+      ctx.strokeStyle = '#00f0ff';
+      ctx.lineWidth = 2.0;
+      ctx.stroke();
+    } else if (entity.dimensions) {
       const wPx = Math.max(12, (entity.dimensions[0] || 1.0) * scale);
       const hPx = Math.max(12, (entity.dimensions[1] || 1.0) * scale);
       ctx.fillStyle = 'rgba(0, 240, 255, 0.12)';
@@ -1423,41 +1702,76 @@
       }
     }
 
-    // 4. Check Adaptive Grid Cells
-    if (currentFrameData && currentFrameData.active_cells) {
-      for (const c of currentFrameData.active_cells) {
-        const wx = ego.x + c.cx * cosA - c.cy * sinA;
-        const wy = ego.y + c.cx * sinA + c.cy * cosA;
-        if (Math.abs(worldCoord.x - wx) <= c.res && Math.abs(worldCoord.y - wy) <= c.res) {
-          const e_var = c.e_var !== undefined ? c.e_var : 0.035;
-          const spread = Math.sqrt(Math.max(0.001, e_var));
-          const distEgo = Math.hypot(wx - ego.x, wy - ego.y);
-          const isBridge = wy >= 260.0;
-          const slope = isBridge ? 7.8 : (c.sem === 2 ? 4.7 : 0.4);
+    // 4. Check Radial / Foveated Adaptive Grid Field
+    const distEgo = Math.hypot(worldCoord.x - ego.x, worldCoord.y - ego.y);
+    if (distEgo <= 85.0) {
+      const ring = RADIAL_ZONES.find(z => distEgo >= z.r1 && distEgo < z.r2) || RADIAL_ZONES[RADIAL_ZONES.length - 1];
 
-          return {
-            type: 'cell',
-            lvl: c.lvl,
-            res: c.res,
-            sem: c.sem,
-            sem_name: c.sem_name,
-            conf: c.conf !== undefined ? c.conf : 0.92,
-            elev: c.elev,
-            e_var: e_var,
-            base_elev: c.elev - spread / 2.0,
-            top_elev: c.elev + spread / 2.0,
-            height: spread,
-            slope_deg: slope,
-            danger: c.danger,
-            d_lvl: c.d_lvl,
-            d_prob: c.d_prob !== undefined ? c.d_prob : c.danger,
-            imp: c.imp,
-            distance: distEgo,
-            occupancy: Math.min(0.98, Math.max(0.04, (c.pts !== undefined ? c.pts : 14) / 32.0)),
-            center_world: [wx, wy, c.elev],
-          };
+      // Azimuth angle relative to ego yaw
+      const worldAngle = Math.atan2(worldCoord.y - ego.y, worldCoord.x - ego.x);
+      const relAngle = ((worldAngle + yawRad) % (2 * Math.PI) + (2 * Math.PI)) % (2 * Math.PI);
+      const s = Math.floor(relAngle / SECTOR_ANGLE);
+      const a1 = -yawRad + s * SECTOR_ANGLE;
+      const a2 = -yawRad + (s + 1) * SECTOR_ANGLE;
+
+      // Check dynamic refinement
+      let isRefined = false;
+      let refineType = null;
+      if (simTime >= 70.0 && simTime <= 105.0) {
+        const pProg = (simTime - 70.0) / 35.0;
+        const pedWx = 310.0 + 20.0 * pProg;
+        const dPed = Math.hypot(pedWx - ego.x, 98.0 - ego.y);
+        const aPed = Math.atan2(98.0 - ego.y, pedWx - ego.x);
+        const normPedA = ((aPed + yawRad) % (2 * Math.PI) + (2 * Math.PI)) % (2 * Math.PI);
+        const pedSec = Math.floor(normPedA / SECTOR_ANGLE);
+        if (Math.abs(s - pedSec) <= 1 && ring.r1 <= dPed && ring.r2 >= dPed) {
+          isRefined = true;
+          refineType = (pedWx >= 318.0 && pedWx <= 322.5) ? 'DANGER' : 'CAUTION';
         }
       }
+
+      // Sample local surface elevation and variance
+      const isBridge = worldCoord.y >= 260.0;
+      const bridgeElev = isBridge ? Math.min(3.4, Math.max(0.0, (worldCoord.y - 260.0) * 0.08)) : 0.0;
+      const isCurb = Math.abs(worldCoord.y) >= 5.5 && !isBridge;
+      const cellElev = isBridge ? bridgeElev : (isCurb ? 0.15 : 0.0);
+      const slope = isBridge ? 7.8 : (isCurb ? 4.7 : 0.3);
+      const cellVar = isCurb ? 0.065 : (isBridge ? 0.035 : (0.0025 + ring.lvl * 0.0012));
+      const spread = Math.sqrt(Math.max(0.001, cellVar)) * 1.6;
+
+      const dangerLevel = isRefined ? refineType : 'SAFE';
+      const dangerProb = isRefined ? (refineType === 'DANGER' ? 0.92 : 0.58) : 0.03;
+      const impScore = isRefined ? 0.95 : (0.15 + (1.0 - distEgo / 85.0) * 0.4);
+
+      return {
+        type: 'cell',
+        lvl: isRefined ? 0 : (uniformMode ? 0 : ring.lvl),
+        res: isRefined ? 0.05 : (uniformMode ? 0.05 : ring.res),
+        sem: isCurb ? 2 : 1,
+        sem_name: ring.zone === 'fine' ? 'Near Corridor (Very Fine 5cm)' : (ring.zone === 'medium' ? 'Transition Zone (Medium 10-20cm)' : 'Distant Roadway (Coarse 40-80cm)'),
+        conf: 0.96,
+        elev: cellElev,
+        e_var: cellVar,
+        base_elev: cellElev - spread / 2.0,
+        top_elev: cellElev + spread / 2.0,
+        height: spread,
+        slope_deg: slope,
+        danger: dangerProb,
+        d_lvl: dangerLevel,
+        d_prob: dangerProb,
+        imp: impScore,
+        distance: distEgo,
+        occupancy: 0.42,
+        center_world: [worldCoord.x, worldCoord.y, cellElev],
+        radial_cell: {
+          r1: ring.r1,
+          r2: ring.r2,
+          a1: a1,
+          a2: a2,
+          cx: ego.x,
+          cy: ego.y
+        }
+      };
     }
 
     // 5. Road & Terrain Surface Fallback (Curbs, Roadway, Elevated Bridge)

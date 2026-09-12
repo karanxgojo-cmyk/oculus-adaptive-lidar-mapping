@@ -386,10 +386,11 @@ input:checked + .slider:before {
 /* Real-Time Driving Phase Overlay */
 .phase-overlay {
   position: absolute;
-  bottom: 12px;
-  left: 14px;
-  background: rgba(10, 15, 29, 0.85);
+  top: 52px;
+  left: 12px;
+  background: rgba(10, 15, 29, 0.88);
   backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border: 1px solid var(--border-card);
   border-radius: 6px;
   padding: 6px 12px;
@@ -397,6 +398,7 @@ input:checked + .slider:before {
   flex-direction: column;
   pointer-events: none;
   max-width: 480px;
+  z-index: 12;
 }
 
 .phase-title {
@@ -412,6 +414,76 @@ input:checked + .slider:before {
   font-size: 0.68rem;
   color: var(--text-main);
   margin-top: 2px;
+}
+
+/* Foveated Radial Grid Legend (Autonomous Driving Research Presentation) */
+.foveated-legend-card {
+  position: absolute;
+  bottom: 12px;
+  left: 14px;
+  background: rgba(8, 14, 26, 0.90);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 240, 255, 0.28);
+  border-radius: 8px;
+  padding: 9px 14px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.65), 0 0 15px rgba(0, 240, 255, 0.08);
+  font-family: var(--font-sans);
+  z-index: 15;
+  pointer-events: none;
+  min-width: 220px;
+}
+
+.foveated-legend-card .legend-header {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: 0.4px;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.foveated-legend-card .legend-header::before {
+  content: "◎";
+  color: var(--accent-cyan);
+  font-size: 0.85rem;
+}
+
+.foveated-legend-card .legend-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 4px;
+  font-size: 0.66rem;
+  font-family: var(--font-mono);
+  color: #cbd5e1;
+}
+
+.legend-swatch {
+  width: 16px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.swatch-very-fine {
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.7);
+  border: 1px solid rgba(248, 113, 113, 0.8);
+}
+
+.swatch-medium {
+  background: #eab308;
+  box-shadow: 0 0 6px rgba(234, 179, 8, 0.6);
+  border: 1px solid rgba(250, 204, 21, 0.8);
+}
+
+.swatch-coarse {
+  background: #0284c7;
+  box-shadow: 0 0 6px rgba(2, 132, 199, 0.6);
+  border: 1px solid rgba(56, 189, 248, 0.8);
 }
 
 /* Tooltip */
