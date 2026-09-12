@@ -23,9 +23,10 @@ $$R = f(\text{distance}, \text{semantic class}, \text{geometry complexity}, \tex
 
 ### Core Advantages
 1. **$>99\%$ Active Cell Reduction**: Retains $5\,\text{cm}$ resolution only where it matters (pedestrians, vehicles, obstacles, ego navigation path) while coarsening static background to $80\,\text{cm}$.
-2. **Sub-Millisecond Cache / <50 ms Live Loop**: Strictly optimized rendering engine operating at target rates of 10, 20, 30, 40, and 50 FPS.
-3. **Fixed World Consistency**: Permanent global world coordinates for static assets (poles, curbs, crosswalks, trees, buildings) with true ego-motion translation and rotation along analytical spline trajectories.
-4. **Interactive Cockpit HUD**: Obsidian cyber-minimal dashboard with interactive entity/cell inspection, multi-layer toggles (Points, Grid, Objects, Semantics, World Map, Elevation, Danger Heatmap, Range Rings), and real-time telemetry.
+2. **Elevation-Aware Hover & 2.5D Inspector**: Interactive hover inspection over vehicles, pedestrians, poles, barriers, buildings ("Open Parking"), and terrain cells displaying Base Elevation ($Z_{base}$), Top Elevation ($Z_{top}$), Object Height ($\Delta Z$), Variance ($\sigma_z^2$), and Terrain Slope.
+3. **Subtle Elevation Visual Dimensioning**: On-canvas vertical CAD dimensioning line showing base/top markers and live height callouts.
+4. **Sub-Millisecond Cache / <50 ms Live Loop**: Strictly optimized rendering engine operating at target rates of 10, 20, 30, 40, and 50 FPS.
+5. **Fixed World Consistency**: Permanent global coordinates for static assets (poles, curbs, crosswalks, trees, buildings) with true ego-motion translation and rotation along analytical spline trajectories.
 
 ---
 
@@ -33,19 +34,19 @@ $$R = f(\text{distance}, \text{semantic class}, \text{geometry complexity}, \tex
 
 ```
                                   [ LiDAR Sensor Stream ]
-                                             ¦
+                                             Â¦
                                              ?
                                   [ Preprocessing Stage ]
                              (Ground Removal, Voxel Filtering)
-                                             ¦
+                                             Â¦
                                              ?
                              [ Perception & Semantic Engine ]
                          (Bounding Boxes, Velocity, Semantics)
-                                             ¦
+                                             Â¦
                                              ?
                              [ Risk & Importance Evaluator ]
                          (Path Relevance, Collision Danger, TTC)
-                                             ¦
+                                             Â¦
                                              ?
                              [ Adaptive 2.5D Quadtree Grid ]
              Level 0 (5cm, RED) -- Critical Path, Pedestrians, Obstacles
@@ -53,7 +54,7 @@ $$R = f(\text{distance}, \text{semantic class}, \text{geometry complexity}, \tex
              Level 2 (20cm, YELLOW) -- Mid-range Roadway (25-50m)
              Level 3 (40cm, LIGHT BLUE) -- Distant Roadway (50-80m)
              Level 4 (80cm, DEEP BLUE) -- Distant Static Background (>80m)
-                                             ¦
+                                             Â¦
                                              ?
                                [ Web Cockpit Visualizer ]
                      FastAPI Backend (Local) / GitHub Pages (Public)
@@ -118,4 +119,4 @@ To update the public application in the future:
 ## Technical Disclosures & Integrity
 - **Perception Mode**: Deterministic geometric clustering and spatial proximity are used for real-time edge execution without requiring external heavy GPU weights.
 - **Measured Metrics**: All frame latency, memory reduction percentages, and FPS figures reflect actual computational operations.
-- **Memory Comparison**: Reductions are benchmarked against an equivalent uniform $5\,\text{cm}$ grid covering the identical $100\,\text{m} \times 80\,\text{m}$ spatial boundary.
+- **Memory Comparison**: Reductions are benchmarked against an equivalent uniform $5\,\text{cm}$ grid covering the identical $100\,\text{m} \times 80\,\text{m}$ spatial boundary.

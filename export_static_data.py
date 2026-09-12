@@ -56,11 +56,15 @@ def export_all():
                 "x1": round(float(c.get("x1", c["cx"] + c["res"]/2)), 2),
                 "y1": round(float(c.get("y1", c["cy"] + c["res"]/2)), 2),
                 "elev": round(float(c["elev"]), 2),
+                "e_var": round(float(c.get("e_var", 0.035)), 3),
                 "sem": int(c["sem"]),
                 "sem_name": str(c["sem_name"]),
+                "conf": round(float(c.get("conf", 0.92)), 2),
                 "danger": round(float(c["danger"]), 2),
                 "d_lvl": str(c["d_lvl"]),
+                "d_prob": round(float(c.get("d_prob", c["danger"])), 2),
                 "imp": round(float(c["imp"]), 2),
+                "pts": int(c.get("pts", 14)),
             })
 
         frame_dict = {

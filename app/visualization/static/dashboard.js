@@ -71,9 +71,9 @@
   let dragStartX = 0;
   let dragStartY = 0;
 
-  // Selected Inspector State
+  // Selected & Hovered Inspector State
   let selectedEntity = null;
-  let selectedType = null; // 'object' or 'cell'
+  let hoveredEntity = null;
 
   // Cache & World Map
   const framesCache = {};
@@ -301,9 +301,10 @@
       drawDynamicActors(ego);
     }
 
-    // 6. Draw Selected Highlight
-    if (selectedEntity) {
-      drawSelectedHighlight(ego);
+    // 6. Draw 2.5D Elevation Visual Cue (Hover or Selection)
+    const activeInspEntity = hoveredEntity || selectedEntity;
+    if (activeInspEntity) {
+      drawElevationVisualCue(activeInspEntity, ego);
     }
 
     // 7. Draw Top-Down Autonomous Vehicle (Vector Silhouette, Windshield, Headlights, Steered Wheels, LiDAR Puck)
@@ -908,34 +909,174 @@
   }
 
   // --------------------------------------------------------------------------
-  // 7. SELECTED ENTITY HIGHLIGHT
+  // 7. 2.5D ELEVATION VISUAL CUE & DIMENSIONING (HOVER OR SELECTION)
   // --------------------------------------------------------------------------
-  function drawSelectedHighlight(ego) {
-    if (selectedType === 'object' && selectedEntity) {
-      const yawRad = (ego.yaw * Math.PI) / 180.0;
-      const cosA = Math.cos(yawRad);
-      const sinA = Math.sin(yawRad);
-      const wx = ego.x + selectedEntity.center[0] * cosA - selectedEntity.center[1] * sinA;
-      const wy = ego.y + selectedEntity.center[0] * sinA + selectedEntity.center[1] * cosA;
-      const p = worldToCanvas(wx, wy);
+  function drawElevationVisualCue(entity, ego) {
+    if (!entity || !entity.center_world) return;
 
-      ctx.save();
+    ctx.save();
+    const cw = entity.center_world;
+    const p = worldToCanvas(cw[0], cw[1]);
+
+    // 1. Footprint Highlight on Ground Plane
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = 'rgba(0, 240, 255, 0.7)';
+    ctx.shadowBlur = 8;
+
+    if (entity.dimensions) {
+      const wPx = Math.max(12, (entity.dimensions[0] || 1.0) * scale);
+      const hPx = Math.max(12, (entity.dimensions[1] || 1.0) * scale);
+      ctx.fillStyle = 'rgba(0, 240, 255, 0.12)';
+      ctx.fillRect(p.px - wPx / 2, p.py - hPx / 2, wPx, hPx);
+      ctx.strokeRect(p.px - wPx / 2, p.py - hPx / 2, wPx, hPx);
+    } else if (entity.radius) {
+      const rPx = Math.max(10, entity.radius * scale);
       ctx.beginPath();
-      ctx.arc(p.px, p.py, 4.5 * scale, 0, 2 * Math.PI);
-      ctx.strokeStyle = 'rgba(239, 68, 68, 0.9)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([4, 4]);
-      ctx.stroke();
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.12)';
+      ctx.arc(p.px, p.py, rPx, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0, 240, 255, 0.12)';
       ctx.fill();
-      ctx.restore();
+      ctx.stroke();
+    } else {
+      const sizePx = Math.max(10, (entity.res || 0.4) * scale);
+      ctx.fillStyle = 'rgba(0, 240, 255, 0.16)';
+      ctx.fillRect(p.px - sizePx / 2, p.py - sizePx / 2, sizePx, sizePx);
+      ctx.strokeRect(p.px - sizePx / 2, p.py - sizePx / 2, sizePx, sizePx);
+    }
+
+    // 2. Vertical 2.5D Measurement Dimension Line (Z Axis Proof)
+    ctx.shadowBlur = 0; // Crisp CAD lines
+    const offsetX = 22; // Offset to the right of entity
+    const lineX = p.px + offsetX;
+    const baseElevation = entity.base_elev !== undefined ? entity.base_elev : 0.0;
+    const topElevation = entity.top_elev !== undefined ? entity.top_elev : baseElevation + (entity.height || 1.5);
+    const objHeight = entity.height !== undefined ? entity.height : Math.max(0.2, topElevation - baseElevation);
+
+    // Visual line height in pixels
+    const hVisualPx = Math.min(85, Math.max(34, objHeight * scale * 0.9));
+    const baseY = p.py;
+    const topY = baseY - hVisualPx;
+    const midY = (baseY + topY) / 2;
+
+    // Ground Baseline Tick
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(lineX - 8, baseY);
+    ctx.lineTo(lineX + 16, baseY);
+    ctx.stroke();
+
+    // Base Marker Dot ●
+    ctx.fillStyle = '#00f0ff';
+    ctx.beginPath();
+    ctx.arc(lineX, baseY, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Top Marker Dot ●
+    ctx.beginPath();
+    ctx.arc(lineX, topY, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Vertical Dashed Dimension Line │
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(lineX, baseY);
+    ctx.lineTo(lineX, topY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Height Value Callout Pill [ H: 1.52m ]
+    const heightText = `H: ${objHeight.toFixed(2)}m`;
+    ctx.font = 'bold 9px "JetBrains Mono", monospace';
+    const textWidth = ctx.measureText(heightText).width;
+    const pillW = textWidth + 10;
+    const pillH = 15;
+    const pillX = lineX + 6;
+    const pillY = midY - pillH / 2;
+
+    ctx.fillStyle = 'rgba(3, 5, 10, 0.92)';
+    ctx.fillRect(pillX, pillY, pillW, pillH);
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(pillX, pillY, pillW, pillH);
+
+    ctx.fillStyle = '#00f0ff';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(heightText, pillX + 5, midY);
+
+    // Base & Top Elevation Labels
+    ctx.font = '8px "JetBrains Mono", monospace';
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(`BASE: ${baseElevation.toFixed(2)}m`, lineX + 6, baseY + 4);
+    ctx.fillText(`TOP: ${topElevation.toFixed(2)}m`, lineX + 6, topY - 4);
+
+    ctx.restore();
+  }
+
+  // Format Floating Tooltip HTML with 2.5D Elevation Data
+  function formatTooltipHtml(entity) {
+    if (entity.type === 'object') {
+      const isDyn = entity.is_dynamic;
+      const speedStr = isDyn
+        ? `Dynamic (${entity.speed ? entity.speed.toFixed(1) : '1.3'} m/s)`
+        : 'STATIC';
+      const colorTag = entity.danger_level === 'DANGER' ? 'text-red' : (entity.danger_level === 'WARNING' ? 'text-amber' : '');
+      const resCm = (entity.resolution * 100).toFixed(0);
+      const resTag = entity.resolution <= 0.05 ? 'RED' : (entity.resolution <= 0.20 ? 'YELLOW' : 'BLUE');
+
+      return `
+        <div class="tooltip-header">
+          <span class="tooltip-title">${entity.class_name.toUpperCase()}</span>
+          <span class="tooltip-badge-25d">2.5D ELEVATION</span>
+        </div>
+        <div class="tooltip-elev-box">
+          <div class="tooltip-elev-title">▲ Z / ELEVATION PROFILE</div>
+          <div class="tooltip-elev-row"><span class="tooltip-elev-key">Base Elevation:</span><span class="tooltip-elev-val">${entity.base_elev.toFixed(2)} m</span></div>
+          <div class="tooltip-elev-row"><span class="tooltip-elev-key">Top Elevation:</span><span class="tooltip-elev-val">${entity.top_elev.toFixed(2)} m</span></div>
+          <div class="tooltip-elev-row"><span class="tooltip-elev-key">Object Height (ΔZ):</span><span class="tooltip-elev-val" style="color:#00f0ff;">${entity.height.toFixed(2)} m</span></div>
+          <div class="tooltip-elev-row"><span class="tooltip-elev-key">Center Z:</span><span class="tooltip-elev-val">${entity.elevation.toFixed(2)} m</span></div>
+        </div>
+        <div class="tooltip-row"><span class="tooltip-key">Confidence:</span><span class="tooltip-val">${(entity.confidence * 100).toFixed(0)}%</span></div>
+        <div class="tooltip-row"><span class="tooltip-key">Distance:</span><span class="tooltip-val">${entity.distance.toFixed(1)} m</span></div>
+        <div class="tooltip-row"><span class="tooltip-key">Complexity:</span><span class="tooltip-val">${entity.complexity || 'Medium'}</span></div>
+        <div class="tooltip-row"><span class="tooltip-key">Motion State:</span><span class="tooltip-val ${isDyn ? 'text-amber' : 'text-muted'}">${speedStr}</span></div>
+        <div class="tooltip-row"><span class="tooltip-key">Danger:</span><span class="tooltip-val ${colorTag}">${entity.danger_level} (${((entity.danger_prob || 0.1) * 100).toFixed(0)}%)</span></div>
+        <div class="tooltip-row"><span class="tooltip-key">Resolution:</span><span class="tooltip-val text-cyan">${resCm} cm (${resTag})</span></div>
+      `;
+    } else {
+      // Cell / Terrain
+      const isCurb = entity.sem === 2;
+      const resCm = (entity.res * 100).toFixed(0);
+      const resTag = entity.lvl === 0 ? 'RED' : (entity.lvl <= 2 ? 'YELLOW' : 'BLUE');
+
+      return `
+        <div class="tooltip-header">
+          <span class="tooltip-title">${(entity.sem_name || 'TERRAIN CELL').toUpperCase()}</span>
+          <span class="tooltip-badge-25d">2.5D TERRAIN</span>
+        </div>
+        <div class="tooltip-elev-box">
+          <div class="tooltip-elev-title">▲ Z / ELEVATION DATA</div>
+          <div class="tooltip-elev-row"><span class="tooltip-elev-key">Median Elevation:</span><span class="tooltip-elev-val">${entity.elev.toFixed(2)} m</span></div>
+          <div class="tooltip-elev-row"><span class="tooltip-elev-key">Base / Top:</span><span class="tooltip-elev-val">${entity.base_elev.toFixed(2)}m / ${entity.top_elev.toFixed(2)}m</span></div>
+          <div class="tooltip-elev-row"><span class="tooltip-elev-key">Terrain Slope:</span><span class="tooltip-elev-val" style="color:#00f0ff;">${entity.slope_deg ? entity.slope_deg.toFixed(1) : '0.4'}°</span></div>
+          <div class="tooltip-elev-row"><span class="tooltip-elev-key">Variance (σ²):</span><span class="tooltip-elev-val">${(entity.e_var || 0.035).toFixed(3)} m²</span></div>
+        </div>
+        <div class="tooltip-row"><span class="tooltip-key">Cell Resolution:</span><span class="tooltip-val text-cyan">${resCm} cm (${resTag})</span></div>
+        <div class="tooltip-row"><span class="tooltip-key">Confidence:</span><span class="tooltip-val">${((entity.conf || 0.92) * 100).toFixed(0)}%</span></div>
+        <div class="tooltip-row"><span class="tooltip-key">Occupancy:</span><span class="tooltip-val">${(entity.occupancy || 0.08).toFixed(2)}</span></div>
+        <div class="tooltip-row"><span class="tooltip-key">Importance:</span><span class="tooltip-val">${(entity.imp || 0.15).toFixed(3)}</span></div>
+        <div class="tooltip-row"><span class="tooltip-key">Danger:</span><span class="tooltip-val">${entity.d_lvl || 'SAFE'}</span></div>
+      `;
     }
   }
 
-  // Populate Selected Entity Inspector
-  function populateInspector(data, isObject = true) {
+  // Populate Sidebar Inspector Card with Elevation Details
+  function populateInspector(data) {
     if (!data) {
-      inspectorContent.innerHTML = '<div class="inspector-empty">Click on an obstacle, vehicle, or grid cell on the map to inspect live perception and risk data.</div>';
+      inspectorContent.innerHTML = '<div class="inspector-empty">Hover or click on any vehicle, pedestrian, pole, wall, barrier, or terrain cell to inspect live 2.5D elevation &amp; perception telemetry.</div>';
       inspectorLevelBadge.textContent = "IDLE";
       inspectorLevelBadge.className = "card-tag";
       return;
@@ -945,28 +1086,421 @@
     inspectorLevelBadge.textContent = lvl;
     inspectorLevelBadge.className = `card-tag tag-${lvl.toLowerCase()}`;
 
-    if (isObject) {
+    if (data.type === 'object') {
+      const isDyn = data.is_dynamic;
+      const speedStr = isDyn
+        ? `${data.speed ? data.speed.toFixed(1) : Math.hypot(data.velocity[0], data.velocity[1]).toFixed(1)} m/s ${data.direction ? `(${data.direction})` : ''}`
+        : 'STATIC (Fixed Infrastructure)';
+      const resTag = data.resolution <= 0.05 ? 'RED (5cm)' : (data.resolution <= 0.20 ? 'YELLOW (10-20cm)' : 'BLUE (40-80cm)');
+
       inspectorContent.innerHTML = `
-        <div class="insp-row"><span class="insp-key">Actor Class:</span><span class="insp-val text-cyan">${data.class_name}</span></div>
-        <div class="insp-row"><span class="insp-key">Confidence:</span><span class="insp-val">${(data.confidence * 100).toFixed(1)}%</span></div>
+        <div class="insp-section-title">
+          <span>PERCEPTION &amp; KINEMATICS</span>
+          <span class="card-tag ${isDyn ? 'tag-dynamic' : 'tag-static'}">${isDyn ? 'DYNAMIC' : 'STATIC'}</span>
+        </div>
+        <div class="insp-row"><span class="insp-key">Object Class:</span><span class="insp-val text-cyan">${data.class_name}</span></div>
+        <div class="insp-row"><span class="insp-key">Confidence:</span><span class="insp-val">${(data.confidence * 100).toFixed(0)}%</span></div>
         <div class="insp-row"><span class="insp-key">Distance:</span><span class="insp-val">${data.distance.toFixed(1)} m</span></div>
-        <div class="insp-row"><span class="insp-key">Sensor Pos (X, Y, Z):</span><span class="insp-val">(${data.center[0].toFixed(1)}, ${data.center[1].toFixed(1)}, ${data.center[2].toFixed(1)}) m</span></div>
-        <div class="insp-row"><span class="insp-key">Motion State:</span><span class="insp-val ${data.is_dynamic ? 'text-amber' : ''}">${data.is_dynamic ? 'Dynamic (Moving)' : 'Static'}</span></div>
-        <div class="insp-row"><span class="insp-key">Velocity:</span><span class="insp-val">(${data.velocity[0].toFixed(1)}, ${data.velocity[1].toFixed(1)}) m/s</span></div>
-        <div class="insp-row"><span class="insp-key">Danger Probability:</span><span class="insp-val text-amber">${(data.danger_prob * 100).toFixed(1)}%</span></div>
-        <div class="insp-row highlight-row"><span class="insp-key">Allocated Resolution:</span><span class="insp-val text-cyan">${(data.resolution * 100).toFixed(0)} cm (${data.resolution <= 0.05 ? 'RED' : 'YELLOW'})</span></div>
+        <div class="insp-row"><span class="insp-key">Complexity:</span><span class="insp-val">${data.complexity || 'Medium'}</span></div>
+        <div class="insp-row"><span class="insp-key">Motion State:</span><span class="insp-val ${isDyn ? 'text-amber' : 'text-muted'}">${isDyn ? 'Dynamic (Moving)' : 'STATIC'}</span></div>
+        <div class="insp-row"><span class="insp-key">Velocity:</span><span class="insp-val ${isDyn ? 'text-amber' : ''}">${speedStr}</span></div>
+        <div class="insp-row"><span class="insp-key">Danger Level:</span><span class="insp-val ${data.danger_level === 'DANGER' ? 'text-red' : (data.danger_level === 'WARNING' ? 'text-amber' : '')}">${data.danger_level}</span></div>
+        <div class="insp-row"><span class="insp-key">Danger Probability:</span><span class="insp-val text-amber">${((data.danger_prob || 0.1) * 100).toFixed(0)}%</span></div>
+        <div class="insp-row highlight-row"><span class="insp-key">Current Resolution:</span><span class="insp-val text-cyan">${(data.resolution * 100).toFixed(0)} cm (${resTag})</span></div>
+
+        <div class="insp-section-title">
+          <span>2.5D ELEVATION DATA</span>
+          <span class="badge-25d">Z / ELEVATION</span>
+        </div>
+        <div class="insp-elev-box">
+          <div class="insp-row-elev"><span class="insp-key">Base Elevation (Z_base):</span><span class="insp-val">${data.base_elev.toFixed(2)} m</span></div>
+          <div class="insp-row-elev"><span class="insp-key">Top Elevation (Z_top):</span><span class="insp-val">${data.top_elev.toFixed(2)} m</span></div>
+          <div class="insp-row-elev"><span class="insp-key">Object Height (ΔZ):</span><span class="insp-val" style="color:#00f0ff;">${data.height.toFixed(2)} m</span></div>
+          <div class="insp-row-elev"><span class="insp-key">Center Z Elevation:</span><span class="insp-val">${data.elevation.toFixed(2)} m</span></div>
+        </div>
       `;
     } else {
+      // Cell / Terrain
+      const resTag = data.lvl === 0 ? 'RED (5cm)' : (data.lvl <= 2 ? 'YELLOW (10-20cm)' : 'BLUE (40-80cm)');
+
       inspectorContent.innerHTML = `
-        <div class="insp-row"><span class="insp-key">Grid Level:</span><span class="insp-val text-cyan">Level ${data.lvl} (${(data.res * 100).toFixed(0)} cm)</span></div>
-        <div class="insp-row"><span class="insp-key">Center (X, Y):</span><span class="insp-val">(${data.cx.toFixed(1)}, ${data.cy.toFixed(1)}) m</span></div>
-        <div class="insp-row"><span class="insp-key">Dominant Class:</span><span class="insp-val">${data.sem_name}</span></div>
-        <div class="insp-row"><span class="insp-key">Confidence:</span><span class="insp-val">${(data.conf * 100).toFixed(0)}%</span></div>
-        <div class="insp-row"><span class="insp-key">Median Elevation:</span><span class="insp-val">${data.elev.toFixed(2)} m</span></div>
-        <div class="insp-row"><span class="insp-key">Danger Level:</span><span class="insp-val">${data.d_lvl}</span></div>
-        <div class="insp-row"><span class="insp-key">Importance Score:</span><span class="insp-val">${data.imp.toFixed(3)}</span></div>
+        <div class="insp-section-title">
+          <span>CELL SPATIAL TELEMETRY</span>
+          <span class="card-tag tag-safe">LEVEL ${data.lvl}</span>
+        </div>
+        <div class="insp-row"><span class="insp-key">Cell Resolution:</span><span class="insp-val text-cyan">${(data.res * 100).toFixed(0)} cm (${resTag})</span></div>
+        <div class="insp-row"><span class="insp-key">Semantic Class:</span><span class="insp-val">${data.sem_name}</span></div>
+        <div class="insp-row"><span class="insp-key">Semantic Confidence:</span><span class="insp-val">${((data.conf || 0.92) * 100).toFixed(0)}%</span></div>
+        <div class="insp-row"><span class="insp-key">Occupancy:</span><span class="insp-val">${(data.occupancy || 0.08).toFixed(2)}</span></div>
+        <div class="insp-row"><span class="insp-key">Importance Score:</span><span class="insp-val">${(data.imp || 0.15).toFixed(3)}</span></div>
+        <div class="insp-row"><span class="insp-key">Danger Level:</span><span class="insp-val">${data.d_lvl || 'SAFE'}</span></div>
+        <div class="insp-row"><span class="insp-key">Distance from Ego:</span><span class="insp-val">${data.distance ? data.distance.toFixed(1) : '12.4'} m</span></div>
+
+        <div class="insp-section-title">
+          <span>2.5D ELEVATION DATA</span>
+          <span class="badge-25d">Z / ELEVATION</span>
+        </div>
+        <div class="insp-elev-box">
+          <div class="insp-row-elev"><span class="insp-key">Median Elevation:</span><span class="insp-val">${data.elev.toFixed(2)} m</span></div>
+          <div class="insp-row-elev"><span class="insp-key">Base Elevation (Z_base):</span><span class="insp-val">${data.base_elev.toFixed(2)} m</span></div>
+          <div class="insp-row-elev"><span class="insp-key">Top Elevation (Z_top):</span><span class="insp-val">${data.top_elev.toFixed(2)} m</span></div>
+          <div class="insp-row-elev"><span class="insp-key">Elevation Variance (σ²):</span><span class="insp-val">${(data.e_var || 0.035).toFixed(3)} m²</span></div>
+          <div class="insp-row-elev"><span class="insp-key">Terrain Slope:</span><span class="insp-val" style="color:#00f0ff;">${data.slope_deg ? data.slope_deg.toFixed(1) : '0.4'}°</span></div>
+        </div>
       `;
     }
+  }
+
+  // Comprehensive Entity Detection for Hover & Click (Objects, Actors, Infrastructure, Cells, Terrain)
+  function findEntityAt(worldCoord, ego) {
+    if (!ego) return null;
+    const yawRad = (ego.yaw * Math.PI) / 180.0;
+    const cosA = Math.cos(yawRad);
+    const sinA = Math.sin(yawRad);
+
+    // 1. Check Dynamic Detected Objects from Current Frame Pipeline
+    if (currentFrameData && currentFrameData.detected_objects) {
+      for (const obj of currentFrameData.detected_objects) {
+        const wx = ego.x + obj.center[0] * cosA - obj.center[1] * sinA;
+        const wy = ego.y + obj.center[0] * sinA + obj.center[1] * cosA;
+        const distToCursor = Math.hypot(worldCoord.x - wx, worldCoord.y - wy);
+        const hitRadius = Math.max(2.2, (obj.dimensions ? Math.max(obj.dimensions[0], obj.dimensions[1]) : 2.0) / 1.4);
+
+        if (distToCursor <= hitRadius) {
+          const base_elev = obj.base_elev !== undefined ? obj.base_elev : Math.max(0.0, obj.center[2] - obj.dimensions[2] / 2.0);
+          const top_elev = obj.top_elev !== undefined ? obj.top_elev : (obj.center[2] + obj.dimensions[2] / 2.0);
+          const height = obj.height !== undefined ? obj.height : obj.dimensions[2];
+          const isDyn = obj.is_dynamic;
+          const speed = isDyn && obj.velocity ? Math.hypot(obj.velocity[0], obj.velocity[1]) : 0.0;
+
+          return {
+            type: 'object',
+            class_name: obj.class_name,
+            semantic_class: obj.semantic_class,
+            confidence: obj.confidence,
+            distance: obj.distance,
+            is_dynamic: isDyn,
+            velocity: obj.velocity || [0.0, 0.0],
+            speed: speed,
+            direction: isDyn ? `${(Math.atan2(obj.velocity[1], obj.velocity[0]) * 180 / Math.PI).toFixed(0)}°` : 'Static',
+            complexity: obj.complexity_cat || obj.complexity || 'Medium',
+            danger_level: obj.danger_level || 'SAFE',
+            danger_prob: obj.danger_prob !== undefined ? obj.danger_prob : 0.1,
+            resolution: obj.resolution || 0.10,
+            base_elev: Math.max(0.0, base_elev),
+            top_elev: top_elev,
+            height: height,
+            elevation: obj.center[2],
+            center_world: [wx, wy, obj.center[2]],
+            dimensions: obj.dimensions,
+          };
+        }
+      }
+    }
+
+    // 2. Check Dynamic World Actors (Crossing Pedestrian & Oncoming Car)
+    // Actor A: Crossing Pedestrian at Intersection (Active in Phase 3: simTime in [70, 105])
+    if (simTime >= 70.0 && simTime <= 105.0) {
+      const pProg = (simTime - 70.0) / 35.0;
+      const pedWx = 310.0 + 20.0 * pProg;
+      const pedWy = 98.0;
+      const distCursor = Math.hypot(worldCoord.x - pedWx, worldCoord.y - pedWy);
+      if (distCursor <= 2.5) {
+        const inLane = (pedWx >= 318.0 && pedWx <= 322.5);
+        const distEgo = Math.hypot(pedWx - ego.x, pedWy - ego.y);
+        return {
+          type: 'object',
+          class_name: 'Pedestrian',
+          semantic_class: 5,
+          confidence: 0.94,
+          distance: distEgo,
+          is_dynamic: true,
+          velocity: [1.3, 0.0],
+          speed: 1.3,
+          direction: 'Eastbound (Crosswalk)',
+          complexity: 'Low (VRU Silhouette)',
+          danger_level: inLane ? 'DANGER' : 'CAUTION',
+          danger_prob: inLane ? 0.92 : 0.61,
+          resolution: 0.05,
+          base_elev: 0.08,
+          top_elev: 1.82,
+          height: 1.74,
+          elevation: 0.95,
+          center_world: [pedWx, pedWy, 0.95],
+          dimensions: [0.6, 0.5, 1.74],
+        };
+      }
+    }
+
+    // Actor B: Oncoming Vehicle in Adjacent Lane (Active in Phase 4: simTime in [105, 145])
+    if (simTime >= 105.0 && simTime <= 145.0) {
+      const cProg = (simTime - 105.0) / 40.0;
+      const carWx = 316.0;
+      const carWy = 250.0 - 110.0 * cProg;
+      const distCursor = Math.hypot(worldCoord.x - carWx, worldCoord.y - carWy);
+      if (distCursor <= 3.2) {
+        const distEgo = Math.hypot(carWx - ego.x, carWy - ego.y);
+        return {
+          type: 'object',
+          class_name: 'Vehicle',
+          semantic_class: 4,
+          confidence: 0.91,
+          distance: distEgo,
+          is_dynamic: true,
+          velocity: [0.0, -14.5],
+          speed: 14.5,
+          direction: 'Southbound (Opposing Corridor)',
+          complexity: 'Medium',
+          danger_level: 'WARNING',
+          danger_prob: 0.74,
+          resolution: 0.10,
+          base_elev: 0.14,
+          top_elev: 1.66,
+          height: 1.52,
+          elevation: 0.90,
+          center_world: [carWx, carWy, 0.90],
+          dimensions: [4.6, 2.0, 1.52],
+        };
+      }
+    }
+
+    // 3. Check Fixed Static Infrastructure in World Map (Poles, Barrier, Parked Cars, Trees, Buildings)
+    if (worldMapData) {
+      // Barrier
+      if (worldMapData.barrier) {
+        const b = worldMapData.barrier;
+        if (Math.abs(worldCoord.x - b.x) <= b.dx / 1.8 && Math.abs(worldCoord.y - b.y) <= b.dy * 1.5) {
+          const distEgo = Math.hypot(b.x - ego.x, b.y - ego.y);
+          return {
+            type: 'object',
+            class_name: b.label || 'Static Obstacle (Barrier)',
+            semantic_class: 3,
+            confidence: 0.96,
+            distance: distEgo,
+            is_dynamic: false,
+            velocity: [0.0, 0.0],
+            speed: 0.0,
+            direction: 'Static',
+            complexity: 'Medium (Interlocking)',
+            danger_level: 'WARNING',
+            danger_prob: 0.68,
+            resolution: 0.05,
+            base_elev: 0.00,
+            top_elev: b.dz,
+            height: b.dz,
+            elevation: b.dz / 2.0,
+            center_world: [b.x, b.y, b.dz / 2.0],
+            dimensions: [b.dx, b.dy, b.dz],
+          };
+        }
+      }
+
+      // Parked Cars
+      if (worldMapData.parked_cars) {
+        for (const car of worldMapData.parked_cars) {
+          if (Math.abs(worldCoord.x - car.x) <= car.dx / 1.7 && Math.abs(worldCoord.y - car.y) <= car.dy / 1.5) {
+            const distEgo = Math.hypot(car.x - ego.x, car.y - ego.y);
+            return {
+              type: 'object',
+              class_name: car.label || 'Parked Vehicle',
+              semantic_class: 4,
+              confidence: 0.94,
+              distance: distEgo,
+              is_dynamic: false,
+              velocity: [0.0, 0.0],
+              speed: 0.0,
+              direction: 'Static',
+              complexity: 'Medium',
+              danger_level: 'CAUTION',
+              danger_prob: 0.35,
+              resolution: 0.10,
+              base_elev: 0.12,
+              top_elev: 0.12 + car.dz,
+              height: car.dz,
+              elevation: 0.12 + car.dz / 2.0,
+              center_world: [car.x, car.y, 0.12 + car.dz / 2.0],
+              dimensions: [car.dx, car.dy, car.dz],
+            };
+          }
+        }
+      }
+
+      // Street Light Poles & Traffic Signs
+      if (worldMapData.poles) {
+        for (const p of worldMapData.poles) {
+          const dist = Math.hypot(worldCoord.x - p.x, worldCoord.y - p.y);
+          if (dist <= 1.8) {
+            const distEgo = Math.hypot(p.x - ego.x, p.y - ego.y);
+            const base_z = p.z || 0.0;
+            return {
+              type: 'object',
+              class_name: 'Pole / Sign',
+              semantic_class: 6,
+              confidence: 0.97,
+              distance: distEgo,
+              is_dynamic: false,
+              velocity: [0.0, 0.0],
+              speed: 0.0,
+              direction: 'Static',
+              complexity: 'Low (Cylindrical)',
+              danger_level: 'SAFE',
+              danger_prob: 0.05,
+              resolution: 0.10,
+              base_elev: base_z,
+              top_elev: base_z + p.h,
+              height: p.h,
+              elevation: base_z + p.h / 2.0,
+              center_world: [p.x, p.y, base_z + p.h / 2.0],
+              dimensions: [0.3, 0.3, p.h],
+            };
+          }
+        }
+      }
+
+      // Trees & Foliage
+      if (worldMapData.trees) {
+        for (const t of worldMapData.trees) {
+          const dist = Math.hypot(worldCoord.x - t.x, worldCoord.y - t.y);
+          if (dist <= t.r) {
+            const distEgo = Math.hypot(t.x - ego.x, t.y - ego.y);
+            return {
+              type: 'object',
+              class_name: 'Tree / Environmental Object',
+              semantic_class: 7,
+              confidence: 0.93,
+              distance: distEgo,
+              is_dynamic: false,
+              velocity: [0.0, 0.0],
+              speed: 0.0,
+              direction: 'Static',
+              complexity: 'High (Canopy Foliage)',
+              danger_level: 'SAFE',
+              danger_prob: 0.04,
+              resolution: 0.20,
+              base_elev: 0.00,
+              top_elev: 6.40,
+              height: 6.40,
+              elevation: 3.20,
+              center_world: [t.x, t.y, 3.20],
+              radius: t.r,
+            };
+          }
+        }
+      }
+
+      // Buildings & Facades (Includes Open Parking, Tech Campus, etc.)
+      if (worldMapData.buildings) {
+        for (const b of worldMapData.buildings) {
+          if (worldCoord.x >= b.x && worldCoord.x <= (b.x + b.w) &&
+              worldCoord.y >= b.y && worldCoord.y <= (b.y + b.h)) {
+            const bCenterX = b.x + b.w / 2.0;
+            const bCenterY = b.y + b.h / 2.0;
+            const distEgo = Math.hypot(bCenterX - ego.x, bCenterY - ego.y);
+            const bHeight = 18.5;
+            return {
+              type: 'object',
+              class_name: `Building (${b.label})`,
+              semantic_class: 7,
+              confidence: 0.99,
+              distance: distEgo,
+              is_dynamic: false,
+              velocity: [0.0, 0.0],
+              speed: 0.0,
+              direction: 'Static',
+              complexity: 'Planar Facade',
+              danger_level: 'SAFE',
+              danger_prob: 0.01,
+              resolution: 0.40,
+              base_elev: 0.00,
+              top_elev: bHeight,
+              height: bHeight,
+              elevation: bHeight / 2.0,
+              center_world: [bCenterX, bCenterY, bHeight / 2.0],
+              dimensions: [b.w, b.h, bHeight],
+            };
+          }
+        }
+      }
+    }
+
+    // 4. Check Adaptive Grid Cells
+    if (currentFrameData && currentFrameData.active_cells) {
+      for (const c of currentFrameData.active_cells) {
+        const wx = ego.x + c.cx * cosA - c.cy * sinA;
+        const wy = ego.y + c.cx * sinA + c.cy * cosA;
+        if (Math.abs(worldCoord.x - wx) <= c.res && Math.abs(worldCoord.y - wy) <= c.res) {
+          const e_var = c.e_var !== undefined ? c.e_var : 0.035;
+          const spread = Math.sqrt(Math.max(0.001, e_var));
+          const distEgo = Math.hypot(wx - ego.x, wy - ego.y);
+          const isBridge = wy >= 260.0;
+          const slope = isBridge ? 7.8 : (c.sem === 2 ? 4.7 : 0.4);
+
+          return {
+            type: 'cell',
+            lvl: c.lvl,
+            res: c.res,
+            sem: c.sem,
+            sem_name: c.sem_name,
+            conf: c.conf !== undefined ? c.conf : 0.92,
+            elev: c.elev,
+            e_var: e_var,
+            base_elev: c.elev - spread / 2.0,
+            top_elev: c.elev + spread / 2.0,
+            height: spread,
+            slope_deg: slope,
+            danger: c.danger,
+            d_lvl: c.d_lvl,
+            d_prob: c.d_prob !== undefined ? c.d_prob : c.danger,
+            imp: c.imp,
+            distance: distEgo,
+            occupancy: Math.min(0.98, Math.max(0.04, (c.pts !== undefined ? c.pts : 14) / 32.0)),
+            center_world: [wx, wy, c.elev],
+          };
+        }
+      }
+    }
+
+    // 5. Road & Terrain Surface Fallback (Curbs, Roadway, Elevated Bridge)
+    if (worldMapData && worldMapData.segments) {
+      for (const seg of worldMapData.segments) {
+        const minX = Math.min(seg.start[0], seg.end[0]) - 16.0;
+        const maxX = Math.max(seg.start[0], seg.end[0]) + 16.0;
+        const minY = Math.min(seg.start[1], seg.end[1]) - 16.0;
+        const maxY = Math.max(seg.start[1], seg.end[1]) + 16.0;
+
+        if (worldCoord.x >= minX && worldCoord.x <= maxX &&
+            worldCoord.y >= minY && worldCoord.y <= maxY) {
+          const isBridge = (seg.type === 'bridge' || worldCoord.y >= 260.0);
+          const bridgeElev = isBridge ? Math.min(3.4, Math.max(0.0, (worldCoord.y - 260.0) * 0.08)) : 0.0;
+          const distEgo = Math.hypot(worldCoord.x - ego.x, worldCoord.y - ego.y);
+          const isCurb = Math.abs(worldCoord.y) >= 5.5 && !isBridge;
+
+          return {
+            type: 'terrain',
+            lvl: isCurb ? 1 : 2,
+            res: isCurb ? 0.10 : 0.20,
+            sem: isCurb ? 2 : 1,
+            sem_name: isCurb ? 'Non-Drivable Curb' : 'Drivable Road Surface',
+            conf: 0.95,
+            elev: isCurb ? 0.15 : bridgeElev,
+            e_var: isCurb ? 0.08 : 0.02,
+            base_elev: isCurb ? 0.00 : bridgeElev,
+            top_elev: isCurb ? 0.15 : bridgeElev + 0.03,
+            height: isCurb ? 0.15 : 0.03,
+            slope_deg: isBridge ? 7.8 : (isCurb ? 4.7 : 0.3),
+            danger: 0.02,
+            d_lvl: 'SAFE',
+            d_prob: 0.02,
+            imp: 0.08,
+            distance: distEgo,
+            occupancy: 0.05,
+            center_world: [worldCoord.x, worldCoord.y, bridgeElev],
+          };
+        }
+      }
+    }
+
+    return null;
   }
 
   // Update Telemetry Cards
@@ -1134,107 +1668,68 @@
       const worldCoord = canvasToWorld(mouseX, mouseY);
       hoverCoord.textContent = `X: ${worldCoord.x.toFixed(1)}m | Y: ${worldCoord.y.toFixed(1)}m`;
 
-      // Tooltip Inspection
-      if (!currentFrameData) return;
+      // Comprehensive Elevation-Aware Hover
       const ego = getEgoPose(simTime);
-      let hovered = null;
+      const entity = findEntityAt(worldCoord, ego);
 
-      // Check objects
-      if (currentFrameData.detected_objects) {
-        const yawRad = (ego.yaw * Math.PI) / 180.0;
-        const cosA = Math.cos(yawRad);
-        const sinA = Math.sin(yawRad);
+      if (entity) {
+        hoveredEntity = entity;
 
-        for (const obj of currentFrameData.detected_objects) {
-          const wx = ego.x + obj.center[0] * cosA - obj.center[1] * sinA;
-          const wy = ego.y + obj.center[0] * sinA + obj.center[1] * cosA;
-          const dist = Math.hypot(worldCoord.x - wx, worldCoord.y - wy);
-          if (dist <= 2.5) {
-            hovered = { type: 'object', data: obj };
-            break;
-          }
-        }
-      }
-
-      // Check cells
-      if (!hovered && currentFrameData.active_cells) {
-        const yawRad = (ego.yaw * Math.PI) / 180.0;
-        const cosA = Math.cos(yawRad);
-        const sinA = Math.sin(yawRad);
-
-        for (const c of currentFrameData.active_cells) {
-          const wx = ego.x + c.cx * cosA - c.cy * sinA;
-          const wy = ego.y + c.cx * sinA + c.cy * cosA;
-          if (Math.abs(worldCoord.x - wx) <= c.res && Math.abs(worldCoord.y - wy) <= c.res) {
-            hovered = { type: 'cell', data: c };
-            break;
-          }
-        }
-      }
-
-      if (hovered) {
+        // Position & Display Tooltip
         tooltip.style.display = 'block';
-        tooltip.style.left = `${e.clientX + 14}px`;
-        tooltip.style.top = `${e.clientY + 14}px`;
-        if (hovered.type === 'object') {
-          const o = hovered.data;
-          tooltip.innerHTML = `<strong>${o.class_name}</strong> (${(o.confidence * 100).toFixed(0)}%)\nDist: ${o.distance.toFixed(1)}m | Danger: ${o.danger_level}\nRes: ${(o.resolution * 100).toFixed(0)}cm (${o.resolution <= 0.05 ? 'RED' : 'YELLOW'})`;
-        } else {
-          const c = hovered.data;
-          const colorName = c.lvl === 0 ? 'RED (5cm)' : (c.lvl <= 2 ? 'YELLOW (10-20cm)' : 'BLUE (40-80cm)');
-          tooltip.innerHTML = `<strong>Cell Level ${c.lvl} (${colorName})</strong>\nClass: ${c.sem_name} | Elev: ${c.elev.toFixed(2)}m\nDanger: ${c.d_lvl}`;
-        }
+        const tooltipX = Math.min(window.innerWidth - 280, e.clientX + 16);
+        const tooltipY = Math.min(window.innerHeight - 200, e.clientY + 16);
+        tooltip.style.left = `${tooltipX}px`;
+        tooltip.style.top = `${tooltipY}px`;
+        tooltip.innerHTML = formatTooltipHtml(entity);
+
+        // Also live-update sidebar inspector card
+        populateInspector(entity);
+        render();
       } else {
+        if (hoveredEntity) {
+          hoveredEntity = null;
+          render();
+        }
         tooltip.style.display = 'none';
+
+        if (selectedEntity) {
+          populateInspector(selectedEntity);
+        } else {
+          populateInspector(null);
+        }
       }
     });
 
-    // Click to Select & Inspect Entity
+    canvas.addEventListener('mouseleave', () => {
+      if (hoveredEntity) {
+        hoveredEntity = null;
+        render();
+      }
+      tooltip.style.display = 'none';
+      if (selectedEntity) {
+        populateInspector(selectedEntity);
+      } else {
+        populateInspector(null);
+      }
+    });
+
+    // Click to Select & Lock Entity
     canvas.addEventListener('click', (e) => {
       const rect = canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
       const worldCoord = canvasToWorld(mouseX, mouseY);
-
-      if (!currentFrameData) return;
       const ego = getEgoPose(simTime);
-      const yawRad = (ego.yaw * Math.PI) / 180.0;
-      const cosA = Math.cos(yawRad);
-      const sinA = Math.sin(yawRad);
+      const entity = findEntityAt(worldCoord, ego);
 
-      if (currentFrameData.detected_objects) {
-        for (const obj of currentFrameData.detected_objects) {
-          const wx = ego.x + obj.center[0] * cosA - obj.center[1] * sinA;
-          const wy = ego.y + obj.center[0] * sinA + obj.center[1] * cosA;
-          const dist = Math.hypot(worldCoord.x - wx, worldCoord.y - wy);
-          if (dist <= 3.0) {
-            selectedEntity = obj;
-            selectedType = 'object';
-            populateInspector(obj, true);
-            render();
-            return;
-          }
-        }
+      if (entity) {
+        selectedEntity = entity;
+        populateInspector(entity);
+      } else {
+        selectedEntity = null;
+        populateInspector(null);
       }
-
-      if (currentFrameData.active_cells) {
-        for (const c of currentFrameData.active_cells) {
-          const wx = ego.x + c.cx * cosA - c.cy * sinA;
-          const wy = ego.y + c.cx * sinA + c.cy * cosA;
-          if (Math.abs(worldCoord.x - wx) <= c.res && Math.abs(worldCoord.y - wy) <= c.res) {
-            selectedEntity = c;
-            selectedType = 'cell';
-            populateInspector(c, false);
-            render();
-            return;
-          }
-        }
-      }
-
-      // Deselect
-      selectedEntity = null;
-      selectedType = null;
-      populateInspector(null);
       render();
     });
 

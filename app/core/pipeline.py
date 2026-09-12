@@ -188,6 +188,9 @@ class MappingPipeline:
                 "danger_level": obj.danger_level,
                 "resolution": obj.target_resolution,
                 "points": obj.point_count,
+                "base_elev": round(obj.center[2] - obj.dimensions[2] / 2.0, 2),
+                "top_elev": round(obj.center[2] + obj.dimensions[2] / 2.0, 2),
+                "height": round(obj.dimensions[2], 2),
             }
             for obj in perception_res.objects
         ]

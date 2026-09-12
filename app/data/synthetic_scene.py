@@ -166,7 +166,7 @@ class SyntheticLiDARGenerator:
             {"x": 30.0, "y": -18.0, "w": 38.0, "h": 16.0, "label": "Tech Campus"},
             {"x": 85.0, "y": 18.0, "w": 42.0, "h": 16.0, "label": "Commerce Tower"},
             {"x": 160.0, "y": -22.0, "w": 45.0, "h": 18.0, "label": "Logistics Depot"},
-            {"x": 230.0, "y": 44.0, "w": 36.0, "h": 16.0, "label": "Transit Plaza"},
+            {"x": 230.0, "y": 44.0, "w": 36.0, "h": 16.0, "label": "Open Parking"},
             {"x": 290.0, "y": 130.0, "w": 24.0, "h": 32.0, "label": "Metro Station"},
             {"x": 348.0, "y": 95.0, "w": 26.0, "h": 34.0, "label": "City Hall"},
             {"x": 348.0, "y": 170.0, "w": 28.0, "h": 40.0, "label": "Medical Center"},

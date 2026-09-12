@@ -417,17 +417,97 @@ input:checked + .slider:before {
 /* Tooltip */
 .cell-tooltip {
   position: absolute;
-  background: rgba(8, 12, 24, 0.95);
-  border: 1px solid var(--accent-cyan);
+  background: rgba(6, 10, 22, 0.96);
+  border: 1px solid rgba(0, 240, 255, 0.6);
   border-radius: 6px;
-  padding: 8px 12px;
+  padding: 10px 14px;
   font-size: 0.72rem;
   font-family: var(--font-mono);
   color: var(--text-main);
   pointer-events: none;
   z-index: 100;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.85);
-  white-space: pre-line;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.9), 0 0 15px rgba(0, 240, 255, 0.15);
+  min-width: 240px;
+  max-width: 320px;
+  backdrop-filter: blur(8px);
+  line-height: 1.35;
+}
+
+.tooltip-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+}
+
+.tooltip-title {
+  font-weight: 700;
+  color: var(--accent-cyan);
+  font-size: 0.78rem;
+  letter-spacing: 0.5px;
+}
+
+.tooltip-badge-25d {
+  background: rgba(0, 240, 255, 0.15);
+  color: #00f0ff;
+  border: 1px solid rgba(0, 240, 255, 0.4);
+  font-size: 0.58rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.tooltip-elev-box {
+  background: rgba(0, 240, 255, 0.04);
+  border: 1px dashed rgba(0, 240, 255, 0.3);
+  border-radius: 4px;
+  padding: 5px 8px;
+  margin: 6px 0;
+}
+
+.tooltip-elev-title {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #00f0ff;
+  letter-spacing: 0.5px;
+  margin-bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tooltip-elev-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  padding: 1px 0;
+}
+
+.tooltip-elev-key {
+  color: var(--text-muted);
+}
+
+.tooltip-elev-val {
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 1.5px 0;
+  font-size: 0.68rem;
+}
+
+.tooltip-key {
+  color: var(--text-muted);
+}
+
+.tooltip-val {
+  font-weight: 600;
 }
 
 /* Map Status Bar */
@@ -671,6 +751,57 @@ input:checked + .slider:before {
 .tag-warning { background: rgba(249, 115, 22, 0.2); color: #f97316; border: 1px solid #f97316; }
 .tag-caution { background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid #f59e0b; }
 .tag-safe    { background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981; }
+.tag-static  { background: rgba(100, 116, 139, 0.2); color: #94a3b8; border: 1px solid #64748b; }
+.tag-dynamic { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid #f59e0b; }
+
+.insp-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px 0 5px 0;
+  padding: 3px 6px;
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #00f0ff;
+  letter-spacing: 0.5px;
+}
+
+.badge-25d {
+  background: #00f0ff;
+  color: #03050a;
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.insp-elev-box {
+  background: rgba(0, 240, 255, 0.03);
+  border-left: 2px solid #00f0ff;
+  padding: 4px 8px;
+  margin-bottom: 6px;
+  border-radius: 0 4px 4px 0;
+}
+
+.insp-row-elev {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  font-size: 0.68rem;
+}
+
+.insp-row-elev .insp-key {
+  color: #94a3b8;
+}
+
+.insp-row-elev .insp-val {
+  color: #38bdf8;
+  font-weight: 600;
+}
 
 /* Semantic Legend */
 .semantic-legend-grid {
