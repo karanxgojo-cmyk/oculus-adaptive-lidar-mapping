@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OCULUS | Perception-Guided Adaptive 2.5D LiDAR Mapping</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Top Header Bar -->
+  <header class="app-header">
+    <div class="brand-section">
+      <div class="status-indicator live-pulse"></div>
+      <div class="title-group">
+        <div class="brand-row">
+          <span class="brand-name">OCULUS</span>
+          <span class="live-tag">LIVE SENSOR STREAM</span>
+        </div>
+        <span class="sub-badge">Perception-Guided Adaptive 2.5D LiDAR Mapping</span>
+      </div>
+    </div>
+
+    <!-- Mode Badges -->
+    <div class="model-badge-group">
+      <div class="badge-item badge-demo" id="perception-badge">
+        <span class="badge-dot"></span>
+        <span class="badge-label">PERCEPTION:</span>
+        <span class="badge-val" id="model-mode-val">PRECOMPUTED (MODULAR ARCHITECTURE)</span>
+      </div>
+      <div class="badge-item badge-disclaimer">
+        <span>MEASURED PERFORMANCE</span>
+      </div>
+    </div>
+
+    <!-- Target FPS Selector (10 / 20 / 30 / 40 / 50 FPS) -->
+    <div class="fps-selector-box">
+      <span class="fps-label">FPS TARGET:</span>
+      <div class="fps-btn-group" id="fps-btn-group">
+        <button class="fps-btn" data-fps="10">10</button>
+        <button class="fps-btn" data-fps="20">20</button>
+        <button class="fps-btn active" data-fps="30">30</button>
+        <button class="fps-btn" data-fps="40">40</button>
+        <button class="fps-btn" data-fps="50">50</button>
+      </div>
+    </div>
+
+    <!-- Mode Comparison Toggle -->
+    <div class="comparison-switch-box">
+      <span class="switch-label" id="lbl-uniform">Uniform 5cm</span>
+      <label class="switch">
+        <input type="checkbox" id="mode-toggle" checked>
+        <span class="slider round"></span>
+      </label>
+      <span class="switch-label active" id="lbl-adaptive">Adaptive Grid</span>
+    </div>
+
+    <!-- Quick Camera Actions -->
+    <div class="action-btn-group">
+      <button id="btn-camera-mode" class="btn btn-secondary active" title="Toggle Camera Tracking Mode">
+        <span id="cam-mode-icon">⌖</span> <span id="cam-mode-text">Follow Ego</span>
+      </button>
+      <button id="btn-reset" class="btn btn-secondary" title="Recenter Camera onto Ego Vehicle">
+        <span>↺</span> Recenter
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Visual Cockpit Layout -->
+  <main class="dashboard-layout">
+    <!-- Center / Left Canvas Area -->
+    <section class="map-viewport-container">
+      <!-- Floating Layer Toolbar on Map -->
+      <div class="map-floating-controls">
+        <span class="control-label">LAYERS:</span>
+        <div class="layer-toggles">
+          <label class="chip active" data-layer="points">
+            <input type="checkbox" checked id="chk-points"> Points
+          </label>
+          <label class="chip active" data-layer="grid">
+            <input type="checkbox" checked id="chk-grid"> Adaptive Grid
+          </label>
+          <label class="chip active" data-layer="objects">
+            <input type="checkbox" checked id="chk-objects"> 3D Objects
+          </label>
+          <label class="chip active" data-layer="semantics">
+            <input type="checkbox" checked id="chk-semantics"> Semantics
+          </label>
+          <label class="chip active" data-layer="world">
+            <input type="checkbox" checked id="chk-world"> World Map
+          </label>
+          <label class="chip" data-layer="elevation">
+            <input type="checkbox" id="chk-elevation"> Elevation Map
+          </label>
+          <label class="chip" data-layer="danger">
+            <input type="checkbox" id="chk-danger"> Risk Heatmap
+          </label>
+          <label class="chip active" data-layer="rings">
+            <input type="checkbox" checked id="chk-rings"> Range Rings
+          </label>
+        </div>
+      </div>
+
+      <!-- Canvas Element -->
+      <div class="canvas-wrapper" id="canvas-wrapper">
+        <canvas id="lidar-canvas"></canvas>
+
+        <!-- Hover / Click Inspection Tooltip -->
+        <div class="cell-tooltip" id="map-tooltip" style="display: none;"></div>
+
+        <!-- Real-Time Scene Phase Indicator -->
+        <div class="phase-overlay" id="phase-overlay">
+          <span class="phase-title" id="phase-title">Urban Cruising</span>
+          <span class="phase-desc" id="phase-desc">Continuous live perception stream</span>
+        </div>
+      </div>
+
+      <!-- Bottom Map Status Bar -->
+      <div class="map-status-bar">
+        <span class="status-chip" id="cam-tracking-status">Camera: Following Ego Vehicle</span>
+        <span class="status-chip" id="cam-zoom-status">Zoom: 100%</span>
+        <span class="status-chip" id="hover-coord">X: 0.0m | Y: 0.0m</span>
+        <span class="status-chip">Sensor: 64-Beam Velodyne HDL-64E</span>
+      </div>
+    </section>
+
+    <!-- Right Sidebar: Live Telemetry & Inspector -->
+    <aside class="sidebar-container">
+      
+      <!-- Primary Live Telemetry Cards -->
+      <div class="sidebar-card telemetry-card">
+        <div class="card-header">
+          <h3>LIVE TELEMETRY</h3>
+          <span class="card-tag tag-measured">MEASURED REAL-TIME</span>
+        </div>
+
+        <div class="metric-grid">
+          <div class="metric-box">
+            <span class="metric-label">TARGET FPS</span>
+            <span class="metric-value text-cyan" id="metric-target-fps">30 FPS</span>
+          </div>
+          <div class="metric-box">
+            <span class="metric-label">MEASURED FPS</span>
+            <span class="metric-value text-cyan" id="metric-fps">--</span>
+          </div>
+          <div class="metric-box highlight-box">
+            <span class="metric-label">MEASURED LATENCY</span>
+            <span class="metric-value text-green" id="metric-latency">-- ms</span>
+            <span class="metric-subtag">&lt; 50ms (REAL-TIME)</span>
+          </div>
+          <div class="metric-box">
+            <span class="metric-label">EGO SPEED</span>
+            <span class="metric-value text-amber" id="metric-speed">-- km/h</span>
+          </div>
+          <div class="metric-box">
+            <span class="metric-label">POINT COUNT</span>
+            <span class="metric-value" id="metric-points">--</span>
+          </div>
+          <div class="metric-box">
+            <span class="metric-label">DYNAMIC OBJECTS</span>
+            <span class="metric-value text-amber" id="metric-dynamic">--</span>
+          </div>
+        </div>
+
+        <!-- Cell Storage Comparison -->
+        <div class="benchmark-section">
+          <div class="benchmark-row">
+            <span class="bm-label">Active Adaptive Cells:</span>
+            <span class="bm-val text-green" id="metric-active-cells">--</span>
+          </div>
+          <div class="benchmark-row">
+            <span class="bm-label">Baseline Uniform 5cm Cells:</span>
+            <span class="bm-val text-dim" id="metric-uniform-cells">--</span>
+          </div>
+          <div class="benchmark-row highlight-row">
+            <span class="bm-label">Cell Storage Reduction:</span>
+            <span class="bm-val text-gradient" id="metric-reduction">-- %</span>
+          </div>
+          
+          <div class="progress-bar-container">
+            <div class="progress-bar-fill" id="reduction-bar" style="width: 0%;"></div>
+          </div>
+          <div class="storage-note">
+            <span>Estimated Cell Storage:</span>
+            <span id="metric-storage-kb">-- KB vs -- KB</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Resolution Hierarchy Zones (RED = FINE, YELLOW = MEDIUM, BLUE = COARSE) -->
+      <div class="sidebar-card">
+        <div class="card-header">
+          <h3>RESOLUTION ZONES</h3>
+          <span class="card-tag tag-policy">POLICY R = f(...)</span>
+        </div>
+
+        <div class="resolution-zones-list">
+          <div class="res-zone-item">
+            <span class="res-badge res-red">5 cm</span>
+            <span class="res-desc">0–10 m & Critical Triggers (Ultra-Fine / RED)</span>
+          </div>
+          <div class="res-zone-item">
+            <span class="res-badge res-orange">10 cm</span>
+            <span class="res-desc">10–25 m & Dynamic Obstacles (Fine / ORANGE)</span>
+          </div>
+          <div class="res-zone-item">
+            <span class="res-badge res-yellow">20 cm</span>
+            <span class="res-desc">25–50 m & Complex Surfaces (Medium / YELLOW)</span>
+          </div>
+          <div class="res-zone-item">
+            <span class="res-badge res-cyan">40 cm</span>
+            <span class="res-desc">50–80 m Distant Roadway (Coarse / BLUE)</span>
+          </div>
+          <div class="res-zone-item">
+            <span class="res-badge res-blue">80 cm</span>
+            <span class="res-desc">&gt;80 m Static Background (Ultra-Coarse / DEEP BLUE)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Selected Object / Cell Inspector -->
+      <div class="sidebar-card inspector-card">
+        <div class="card-header">
+          <h3>SELECTED OBJECT INSPECTOR</h3>
+          <span class="card-tag" id="inspector-level-badge">IDLE</span>
+        </div>
+
+        <div class="inspector-content" id="inspector-content">
+          <div class="inspector-empty">Click on an obstacle, vehicle, or grid cell on the map to inspect live perception and risk data.</div>
+        </div>
+      </div>
+
+      <!-- Semantic Classes Legend -->
+      <div class="sidebar-card legend-card">
+        <div class="card-header">
+          <h3>SEMANTIC CLASSES</h3>
+        </div>
+        <div class="semantic-legend-grid">
+          <div class="sem-item"><span class="sem-dot sem-road"></span> Drivable Road</div>
+          <div class="sem-item"><span class="sem-dot sem-sidewalk"></span> Non-Drivable</div>
+          <div class="sem-item"><span class="sem-dot sem-obstacle"></span> Obstacle</div>
+          <div class="sem-item"><span class="sem-dot sem-vehicle"></span> Vehicle</div>
+          <div class="sem-item"><span class="sem-dot sem-pedestrian"></span> Pedestrian</div>
+          <div class="sem-item"><span class="sem-dot sem-pole"></span> Pole / Sign</div>
+          <div class="sem-item"><span class="sem-dot sem-wall"></span> Wall / Facade</div>
+        </div>
+      </div>
+
+    </aside>
+  </main>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>
