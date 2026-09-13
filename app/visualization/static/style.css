@@ -903,3 +903,303 @@ input:checked + .slider:before {
 .sem-pedestrian { background: #ef4444; }
 .sem-pole { background: #a855f7; }
 .sem-wall { background: #0ea5e9; }
+
+/* -------------------------------------------------------------------------- */
+/* LIVE ROAD NETWORK & NAVIGATION HUD STYLES                                  */
+/* -------------------------------------------------------------------------- */
+
+.badge-live-osm {
+  font-size: 0.62rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  background: rgba(16, 185, 129, 0.16);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: 4px;
+  padding: 2px 6px;
+  letter-spacing: 0.5px;
+}
+
+.tag-osm {
+  background: rgba(6, 182, 212, 0.15);
+  color: #06b6d4;
+  border: 1px solid rgba(6, 182, 212, 0.35);
+}
+
+.route-card {
+  border-left: 3px solid #06b6d4 !important;
+}
+
+.route-select-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.route-select-label {
+  font-size: 0.62rem;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+}
+
+.route-dropdown {
+  width: 100%;
+  background: #090d16;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 0.70rem;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.route-dropdown:hover,
+.route-dropdown:focus {
+  border-color: #06b6d4;
+  box-shadow: 0 0 8px rgba(6, 182, 212, 0.3);
+}
+
+.route-dropdown option {
+  background: #0f172a;
+  color: #f1f5f9;
+}
+
+.btn-gps {
+  width: 100%;
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.16), rgba(59, 130, 246, 0.16));
+  border: 1px solid rgba(6, 182, 212, 0.45);
+  color: #22d3ee;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.70rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  transition: all 0.2s ease;
+}
+
+.btn-gps:hover {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.3), rgba(59, 130, 246, 0.3));
+  border-color: #22d3ee;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(6, 182, 212, 0.35);
+}
+
+.gps-icon {
+  font-size: 0.85rem;
+}
+
+.route-telemetry-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.route-info-box {
+  background: #070b13;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 5px;
+  padding: 5px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.route-info-box.span-2 {
+  grid-column: span 2;
+}
+
+.highlight-route-box {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(6, 182, 212, 0.1));
+  border: 1px solid rgba(6, 182, 212, 0.35);
+}
+
+.route-info-label {
+  font-size: 0.58rem;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  letter-spacing: 0.4px;
+}
+
+.route-info-val {
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: #f8fafc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.maneuver-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.maneuver-icon-badge {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: rgba(234, 179, 8, 0.2);
+  border: 1px solid #eab308;
+  color: #fef08a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.maneuver-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.maneuver-action-text {
+  font-size: 0.70rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.maneuver-dist-text {
+  font-size: 0.62rem;
+  font-family: var(--font-mono);
+  color: #38bdf8;
+}
+
+.route-honesty-note {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.honesty-badge-row {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.honesty-tag {
+  font-size: 0.56rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  letter-spacing: 0.3px;
+}
+
+.honesty-tag.tag-research {
+  background: rgba(99, 102, 241, 0.12);
+  color: #818cf8;
+  border: 1px solid rgba(99, 102, 241, 0.28);
+}
+
+.osm-attribution-line {
+  font-size: 0.60rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.osm-attribution-line a {
+  color: #38bdf8;
+  text-decoration: none;
+}
+
+.osm-attribution-line a:hover {
+  text-decoration: underline;
+}
+
+/* Floating Turn-by-Turn Navigation HUD on Map Canvas */
+.nav-hud-floating {
+  position: absolute;
+  top: 48px;
+  right: 14px;
+  z-index: 10;
+  background: rgba(7, 11, 19, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  border-radius: 8px;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.nav-hud-icon-box {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(6, 182, 212, 0.2);
+  border: 1px solid #06b6d4;
+  color: #22d3ee;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.nav-hud-text-box {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.nav-hud-top-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-hud-action {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #ffffff;
+  font-family: var(--font-mono);
+}
+
+.nav-hud-badge {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: #10b981;
+  font-family: var(--font-mono);
+  background: rgba(16, 185, 129, 0.15);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.nav-hud-sub-line {
+  font-size: 0.65rem;
+  color: #94a3b8;
+  font-family: var(--font-mono);
+}
+

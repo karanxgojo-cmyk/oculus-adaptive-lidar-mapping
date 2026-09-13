@@ -110,7 +110,12 @@ class DashboardServer:
         async def get_js():
             return FileResponse(static_dir / "dashboard.js", media_type="application/javascript")
 
+        @self.app.get("/osm_router.js")
+        async def get_osm_router():
+            return FileResponse(static_dir / "osm_router.js", media_type="application/javascript")
+
         @self.app.get("/api/status")
+        @self.app.get("/api/state")
         async def get_status():
             return {
                 "system": self.config.get("system", {}).get("project_name", "OCULUS"),

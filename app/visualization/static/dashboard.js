@@ -50,6 +50,26 @@
   const chkElevation = document.getElementById('chk-elevation');
   const chkDanger = document.getElementById('chk-danger');
   const chkRings = document.getElementById('chk-rings');
+  const chkNavRoute = document.getElementById('chk-nav-route');
+
+  // Live Navigation & Road Network Elements
+  const routePresetSelect = document.getElementById('route-preset-select');
+  const btnLiveGps = document.getElementById('btn-live-gps');
+  const routeStatusChip = document.getElementById('route-status-chip');
+  const routeRoadName = document.getElementById('route-road-name');
+  const routeRoadType = document.getElementById('route-road-type');
+  const routeManeuverIcon = document.getElementById('route-maneuver-icon');
+  const routeManeuverText = document.getElementById('route-maneuver-text');
+  const routeManeuverDist = document.getElementById('route-maneuver-dist');
+  const routeProgressVal = document.getElementById('route-progress-val');
+  const navHudFloating = document.getElementById('nav-hud-floating');
+  const navHudIcon = document.getElementById('nav-hud-icon');
+  const navHudAction = document.getElementById('nav-hud-action');
+  const navHudBadge = document.getElementById('nav-hud-badge');
+  const navHudRoad = document.getElementById('nav-hud-road');
+
+  // Dynamic Route Engine State
+  let activeRouteMode = 'downtown_grid'; // 'downtown_grid' | 'plaza_roundabout' | 'coastal_overpass' | 'live_gps' | 'benchmark'
 
   // Simulation & Pacing State
   let targetFps = 30;
@@ -120,9 +140,14 @@
   const NUM_SECTORS = 32;
   const SECTOR_ANGLE = (2 * Math.PI) / NUM_SECTORS;
 
-  // Trajectory Math: Continuous ego vehicle pose across the 180s route
-  // Uses exact analytical derivatives: yaw(t) = atan2(vy, vx) smoothly aligned before & during turns
+  // Trajectory Math: Continuous ego vehicle pose
+  // Evaluates live dynamic OSM routes (Downtown Grid, Roundabout, Overpass, Live GPS)
+  // or the calibrated multi-topology benchmark loop.
   function getEgoPose(tSec) {
+    if (activeRouteMode !== 'benchmark' && window.osmRouter) {
+      return window.osmRouter.getEgoPose(tSec);
+    }
+
     const t = Math.max(0.0, Math.min(TOTAL_DURATION_SEC, tSec));
     let x, y, z, vx, vy, steering = 0.0;
 
@@ -304,6 +329,11 @@
     // 1. Draw Fixed Static World Map (Roads, Poles, Trees, Buildings, Crosswalks, Barrier)
     if (chkWorld.checked && worldMapData) {
       drawWorldMap(worldMapData, ego);
+    }
+
+    // 1b. Draw Active Dynamic OSM Route Trajectory & Turn Markers
+    if (chkNavRoute && chkNavRoute.checked && window.osmRouter && activeRouteMode !== 'benchmark') {
+      window.osmRouter.drawRouteOverlay(ctx, worldToCanvas, ego);
     }
 
     // 2. Draw Radial / Foveated Adaptive Grid Field (Concentric Red/Yellow/Blue Resolution)
@@ -924,6 +954,15 @@
           }
         }
 
+        // Dynamic Forward Path Relevance Booster (along active OSM route)
+        if (!isRefined && window.osmRouter && activeRouteMode !== 'benchmark') {
+          const pathInfo = window.osmRouter.getDistanceToPath(cellWx, cellWy, ego, 40.0);
+          if (pathInfo.inForwardCorridor && ring.r1 <= 30.0) {
+            isRefined = true;
+            refineType = 'PATH_CORRIDOR';
+          }
+        }
+
         // Determine Cell Color based on mode / active layer
         let cellFill = ring.color;
         let cellStroke = ring.stroke;
@@ -959,6 +998,11 @@
             cellFill = 'rgba(239, 68, 68, 0.65)';
             cellStroke = '#f87171';
             lineWidth = 1.4;
+          } else if (refineType === 'PATH_CORRIDOR') {
+            // Forward driving corridor boosted to fine resolution / active guidance
+            cellFill = 'rgba(6, 182, 212, 0.38)';
+            cellStroke = 'rgba(34, 211, 238, 0.65)';
+            lineWidth = 1.2;
           } else {
             cellFill = 'rgba(245, 158, 11, 0.52)';
             cellStroke = '#fbbf24';
@@ -1830,8 +1874,14 @@
     reductionBar.style.width = `${m.cell_reduction_percent}%`;
     metricStorageKb.textContent = `${m.estimated_adaptive_storage_kb.toFixed(0)} KB vs ${m.estimated_uniform_storage_kb.toFixed(0)} KB`;
 
-    if (currentFrameData.phase_name) phaseTitle.textContent = currentFrameData.phase_name;
-    if (currentFrameData.description) phaseDesc.textContent = currentFrameData.description;
+    if (activeRouteMode !== 'benchmark' && window.osmRouter) {
+      const tel = window.osmRouter.telemetry;
+      phaseTitle.textContent = tel.roadName || 'OSM Roadway';
+      phaseDesc.textContent = `${tel.maneuverText} (${tel.maneuverDistM}m)`;
+    } else {
+      if (currentFrameData.phase_name) phaseTitle.textContent = currentFrameData.phase_name;
+      if (currentFrameData.description) phaseDesc.textContent = currentFrameData.description;
+    }
 
     const ego = getEgoPose(simTime);
     metricSpeed.textContent = `${(ego.speed * 3.6).toFixed(1)} km/h`;
@@ -1940,7 +1990,7 @@
     });
 
     // Layer Toggles
-    [chkPoints, chkGrid, chkObjects, chkSemantics, chkWorld, chkElevation, chkDanger, chkRings].forEach(chk => {
+    [chkPoints, chkGrid, chkObjects, chkSemantics, chkWorld, chkElevation, chkDanger, chkRings, chkNavRoute].forEach(chk => {
       if (chk) {
         chk.parentElement.addEventListener('click', () => {
           setTimeout(() => {
@@ -1950,6 +2000,77 @@
         });
       }
     });
+
+    // Dynamic Road Network Preset Dropdown
+    if (routePresetSelect) {
+      routePresetSelect.addEventListener('change', (e) => {
+        const val = e.target.value;
+        activeRouteMode = val;
+        if (val === 'live_gps') {
+          triggerGpsAcquisition();
+        } else if (val === 'benchmark') {
+          if (routeStatusChip) routeStatusChip.textContent = '● BENCHMARK 180s';
+          if (routeRoadType) routeRoadType.textContent = 'Multi-Topology Benchmark';
+          if (routeRoadName) routeRoadName.textContent = 'Transit Corridor & Boulevard';
+          render();
+        } else if (window.osmRouter) {
+          window.osmRouter.loadPresetByKey(val);
+          render();
+        }
+      });
+    }
+
+    // Live GPS Button
+    if (btnLiveGps) {
+      btnLiveGps.addEventListener('click', () => {
+        triggerGpsAcquisition();
+      });
+    }
+
+    // Live Navigation Telemetry Listener
+    if (window.osmRouter) {
+      window.osmRouter.onUpdate((tel) => {
+        if (routeRoadName) routeRoadName.textContent = tel.roadName;
+        if (routeRoadType) routeRoadType.textContent = tel.roadType;
+        if (routeManeuverIcon) routeManeuverIcon.textContent = tel.maneuverIcon;
+        if (routeManeuverText) routeManeuverText.textContent = tel.maneuverText;
+        if (routeManeuverDist) routeManeuverDist.textContent = `in ${tel.maneuverDistM} m`;
+        if (routeProgressVal) routeProgressVal.textContent = `${tel.progressPercent.toFixed(0)}%`;
+        if (routeStatusChip) {
+          routeStatusChip.textContent = tel.isLiveNetwork ? '● OSM LIVE' : (tel.statusBadge === 'GPS LIVE' ? '● GPS LIVE' : '● OSM VERIFIED');
+        }
+
+        // Update floating turn banner on canvas
+        if (navHudFloating && chkNavRoute && chkNavRoute.checked && activeRouteMode !== 'benchmark') {
+          navHudFloating.style.display = 'flex';
+          if (navHudIcon) navHudIcon.textContent = tel.maneuverIcon;
+          if (navHudAction) navHudAction.textContent = `In ${tel.maneuverDistM} m`;
+          if (navHudRoad) navHudRoad.textContent = tel.roadName;
+          if (navHudBadge) {
+            navHudBadge.textContent = tel.isLiveNetwork ? '● LIVE OSM' : '● OSM CACHED';
+          }
+        } else if (navHudFloating) {
+          navHudFloating.style.display = 'none';
+        }
+      });
+    }
+
+  function triggerGpsAcquisition() {
+    if (routeStatusChip) routeStatusChip.textContent = '● ACQUIRING GPS...';
+    if (btnLiveGps) btnLiveGps.innerHTML = '<span class="gps-icon">🛰</span> Acquiring Satellite Fix...';
+    if (window.osmRouter) {
+      window.osmRouter.requestLiveGPS((success, msg) => {
+        if (btnLiveGps) btnLiveGps.innerHTML = '<span class="gps-icon">⌖</span> Acquire Live GPS Route';
+        if (success) {
+          activeRouteMode = 'live_gps';
+          if (routePresetSelect) routePresetSelect.value = 'live_gps';
+        } else {
+          console.warn('GPS notification:', msg);
+        }
+        render();
+      });
+    }
+  }
 
     // Mouse Pan Interaction
     canvas.addEventListener('mousedown', (e) => {

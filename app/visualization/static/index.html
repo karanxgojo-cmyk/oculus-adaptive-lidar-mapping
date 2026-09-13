@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="version" content="3.0.0-foveated">
+  <meta name="version" content="4.0.0-live-routing">
   <title>OCULUS | Perception-Guided Adaptive 2.5D LiDAR Mapping</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -98,6 +98,9 @@
           <label class="chip active" data-layer="rings">
             <input type="checkbox" checked id="chk-rings"> Range Rings
           </label>
+          <label class="chip active" data-layer="navroute">
+            <input type="checkbox" checked id="chk-nav-route"> Route Path
+          </label>
         </div>
       </div>
 
@@ -107,6 +110,18 @@
 
         <!-- Hover / Click Inspection Tooltip -->
         <div class="cell-tooltip" id="map-tooltip" style="display: none;"></div>
+
+        <!-- Live Turn-by-Turn Navigation HUD Overlay on Map -->
+        <div class="nav-hud-floating" id="nav-hud-floating">
+          <div class="nav-hud-icon-box" id="nav-hud-icon">⬆</div>
+          <div class="nav-hud-text-box">
+            <div class="nav-hud-top-line">
+              <span class="nav-hud-action" id="nav-hud-action">Proceed on route</span>
+              <span class="nav-hud-badge" id="nav-hud-badge">● LIVE OSM</span>
+            </div>
+            <div class="nav-hud-sub-line" id="nav-hud-road">Montgomery Street</div>
+          </div>
+        </div>
 
         <!-- Real-Time Scene Phase Indicator -->
         <div class="phase-overlay" id="phase-overlay">
@@ -144,6 +159,76 @@
     <!-- Right Sidebar: Live Telemetry & Inspector -->
     <aside class="sidebar-container">
       
+      <!-- Live Road Network & Dynamic Route Panel -->
+      <div class="sidebar-card route-card" id="nav-hud-panel">
+        <div class="card-header">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <h3>ROAD NETWORK &amp; ROUTE</h3>
+            <span class="badge-live-osm" id="route-status-chip">● OSM LIVE</span>
+          </div>
+          <span class="card-tag tag-osm">REAL-TIME</span>
+        </div>
+
+        <!-- Location Preset Dropdown -->
+        <div class="route-select-wrapper">
+          <label class="route-select-label" for="route-preset-select">TOPOLOGY / CITY:</label>
+          <div class="select-row">
+            <select id="route-preset-select" class="route-dropdown">
+              <option value="downtown_grid">SF Downtown Tech Grid (4-Way Junctions &amp; Turns)</option>
+              <option value="plaza_roundabout">Paris Arc de Triomphe (12-Lane Roundabout)</option>
+              <option value="coastal_overpass">Seattle Coastal Waterfront (Overpass &amp; Bridge)</option>
+              <option value="live_gps">📍 Live GPS Location (Browser Geolocation)</option>
+              <option value="benchmark">Calibrated Multi-Topology Benchmark (180s)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Quick GPS Action Button -->
+        <button id="btn-live-gps" class="btn btn-gps" title="Query Live Route from Current GPS Location">
+          <span class="gps-icon">⌖</span> Acquire Live GPS Route
+        </button>
+
+        <!-- Dynamic Navigation Status & Turn-by-Turn Telemetry -->
+        <div class="route-telemetry-grid">
+          <div class="route-info-box">
+            <span class="route-info-label">CURRENT ROAD</span>
+            <span class="route-info-val text-cyan" id="route-road-name">Montgomery Street</span>
+          </div>
+          <div class="route-info-box">
+            <span class="route-info-label">ROAD TYPE</span>
+            <span class="route-info-val" id="route-road-type">Primary Arterial</span>
+          </div>
+          <div class="route-info-box span-2 highlight-route-box">
+            <div class="maneuver-row">
+              <span class="maneuver-icon-badge" id="route-maneuver-icon">⬆</span>
+              <div class="maneuver-details">
+                <span class="maneuver-action-text" id="route-maneuver-text">Proceed on Montgomery St</span>
+                <span class="maneuver-dist-text" id="route-maneuver-dist">in 160 m</span>
+              </div>
+            </div>
+          </div>
+          <div class="route-info-box">
+            <span class="route-info-label">PATH RELEVANCE</span>
+            <span class="route-info-val text-red" id="route-path-boost">5cm BOOST ACTIVE</span>
+          </div>
+          <div class="route-info-box">
+            <span class="route-info-label">ROUTE PROGRESS</span>
+            <span class="route-info-val text-amber" id="route-progress-val">0%</span>
+          </div>
+        </div>
+
+        <!-- Honesty Disclaimer & Attribution -->
+        <div class="route-honesty-note">
+          <div class="honesty-badge-row">
+            <span class="honesty-tag">ROAD DATA: LIVE OSM</span>
+            <span class="honesty-tag tag-research">LIDAR: RESEARCH SIMULATION</span>
+          </div>
+          <div class="osm-attribution-line">
+            © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> | OSRM Engine
+          </div>
+        </div>
+      </div>
+
       <!-- Primary Live Telemetry Cards -->
       <div class="sidebar-card telemetry-card">
         <div class="card-header">
@@ -269,6 +354,7 @@
     </aside>
   </main>
 
+  <script src="osm_router.js"></script>
   <script src="dashboard.js"></script>
 </body>
 </html>
