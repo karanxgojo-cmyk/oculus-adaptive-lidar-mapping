@@ -163,60 +163,56 @@
       <div class="sidebar-card route-card" id="nav-hud-panel">
         <div class="card-header">
           <div style="display: flex; align-items: center; gap: 6px;">
-            <h3>ROAD NETWORK &amp; ROUTE</h3>
-            <span class="badge-live-osm" id="route-status-chip">● OSM LIVE</span>
+            <h3>LIVE ROAD NETWORK &amp; LOCATION</h3>
+            <span class="badge-live-osm" id="route-status-chip">● OSM CONNECTED</span>
           </div>
-          <span class="card-tag tag-osm">REAL-TIME</span>
+          <span class="card-tag tag-osm" id="geo-tracking-badge">DEVICE GEOLOCATION</span>
         </div>
 
-        <!-- Location Preset Dropdown -->
-        <div class="route-select-wrapper">
-          <label class="route-select-label" for="route-preset-select">TOPOLOGY / CITY:</label>
-          <div class="select-row">
-            <select id="route-preset-select" class="route-dropdown">
-              <option value="4way_straight" selected>4-Way Intersection (Straight Through)</option>
-              <option value="4way_left">4-Way Intersection (Left Turn onto West Ave)</option>
-              <option value="4way_right">4-Way Intersection (Right Turn onto East Ave)</option>
-              <option value="plaza_roundabout">Paris Arc de Triomphe (12-Lane Roundabout)</option>
-              <option value="downtown_grid">SF Downtown Tech Grid (Multi-Block)</option>
-              <option value="coastal_overpass">Seattle Coastal Waterfront &amp; Viaduct</option>
-              <option value="live_gps">📍 Live GPS Location (Browser Geolocation)</option>
-              <option value="benchmark">Calibrated Multi-Topology Benchmark (180s)</option>
-            </select>
-          </div>
+        <!-- Live Status Indicators Grid -->
+        <div class="live-status-chips-grid">
+          <span class="status-pill status-pill-green" id="pill-osm">● OSM CONNECTED</span>
+          <span class="status-pill status-pill-cyan" id="pill-gps">● DEVICE GEOLOCATION</span>
+          <span class="status-pill status-pill-blue" id="pill-match">● MAP MATCH: ACTIVE</span>
+          <span class="status-pill status-pill-amber" id="pill-route">● DYNAMIC ROUTE</span>
         </div>
 
-        <!-- Quick Intersection Decision Buttons -->
-        <div class="junction-btn-group" id="junction-decision-group">
-          <span class="junction-btn-label">JUNCTION DECISION:</span>
-          <div class="junction-btns">
-            <button class="junc-btn active" data-turn="4way_straight">⬆ Straight</button>
-            <button class="junc-btn" data-turn="4way_left">↰ Left</button>
-            <button class="junc-btn" data-turn="4way_right">↱ Right</button>
+        <!-- Device Geolocation & GNSS Accuracy Readout -->
+        <div class="geo-telemetry-box">
+          <div class="geo-top-row">
+            <span class="geo-label">DEVICE POSITION (WGS84)</span>
+            <span class="geo-accuracy-badge" id="geo-accuracy-val">ACCURACY: ±8 m</span>
+          </div>
+          <div class="geo-coords-val" id="geo-coords-val">Acquiring live position...</div>
+          <div class="geo-sub-row">
+            <span id="geo-altitude-val">ALT: -- m</span>
+            <span id="geo-speed-val">SPEED: 0.0 km/h</span>
+            <span id="geo-timestamp-val">TIMESTAMP: --</span>
           </div>
         </div>
 
-        <!-- Quick GPS Action Button -->
-        <button id="btn-live-gps" class="btn btn-gps" title="Query Live Route from Current GPS Location">
-          <span class="gps-icon">⌖</span> Acquire Live GPS Route
-        </button>
+        <!-- Map Destination Tip -->
+        <div class="dest-instruction-bar" id="dest-instruction-bar">
+          <span class="dest-icon">🎯</span>
+          <span class="dest-text" id="dest-status-text">Click anywhere on map to set a dynamic route destination</span>
+        </div>
 
         <!-- Dynamic Navigation Status & Turn-by-Turn Telemetry -->
         <div class="route-telemetry-grid">
           <div class="route-info-box">
             <span class="route-info-label">CURRENT ROAD</span>
-            <span class="route-info-val text-cyan" id="route-road-name">Montgomery Street</span>
+            <span class="route-info-val text-cyan" id="route-road-name">Querying OSM...</span>
           </div>
           <div class="route-info-box">
             <span class="route-info-label">ROAD TYPE</span>
-            <span class="route-info-val" id="route-road-type">Primary Arterial</span>
+            <span class="route-info-val" id="route-road-type">Live Highway Class</span>
           </div>
           <div class="route-info-box span-2 highlight-route-box">
             <div class="maneuver-row">
               <span class="maneuver-icon-badge" id="route-maneuver-icon">⬆</span>
               <div class="maneuver-details">
-                <span class="maneuver-action-text" id="route-maneuver-text">Proceed on Montgomery St</span>
-                <span class="maneuver-dist-text" id="route-maneuver-dist">in 160 m</span>
+                <span class="maneuver-action-text" id="route-maneuver-text">Navigating active road network</span>
+                <span class="maneuver-dist-text" id="route-maneuver-dist">in 120 m</span>
               </div>
             </div>
           </div>
@@ -230,14 +226,31 @@
           </div>
         </div>
 
+        <!-- Optional Live Optical Sensor Action -->
+        <div class="camera-action-row">
+          <button id="btn-camera-sensor" class="btn btn-camera" title="Optional: Connect live optical webcam/mobile camera stream">
+            <span class="cam-icon">📷</span> Connect Live Camera Sensor (Optional)
+          </button>
+        </div>
+
+        <!-- Picture-in-Picture Live Camera Dock (Hidden until activated) -->
+        <div id="camera-sensor-dock" class="camera-sensor-dock" style="display: none;">
+          <video id="camera-video" playsinline autoplay muted></video>
+          <div class="camera-overlay-bar">
+            <span class="cam-status-text">● OPTICAL SENSOR ACTIVE</span>
+            <button id="btn-close-camera" class="btn-cam-close" title="Disconnect Optical Sensor">✕</button>
+          </div>
+        </div>
+
         <!-- Honesty Disclaimer & Attribution -->
         <div class="route-honesty-note">
           <div class="honesty-badge-row">
+            <span class="honesty-tag tag-geo">LOCATION: DEVICE GEOLOCATION</span>
             <span class="honesty-tag">ROAD DATA: LIVE OSM</span>
             <span class="honesty-tag tag-research">LIDAR: RESEARCH SIMULATION</span>
           </div>
           <div class="osm-attribution-line">
-            © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> | OSRM Engine
+            © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> | OSRM / Overpass Engine
           </div>
         </div>
       </div>

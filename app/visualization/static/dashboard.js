@@ -53,8 +53,6 @@
   const chkNavRoute = document.getElementById('chk-nav-route');
 
   // Live Navigation & Road Network Elements
-  const routePresetSelect = document.getElementById('route-preset-select');
-  const btnLiveGps = document.getElementById('btn-live-gps');
   const routeStatusChip = document.getElementById('route-status-chip');
   const routeRoadName = document.getElementById('route-road-name');
   const routeRoadType = document.getElementById('route-road-type');
@@ -68,8 +66,24 @@
   const navHudBadge = document.getElementById('nav-hud-badge');
   const navHudRoad = document.getElementById('nav-hud-road');
 
-  // Dynamic Route Engine State
-  let activeRouteMode = '4way_straight'; // '4way_straight' | '4way_left' | '4way_right' | 'plaza_roundabout' | 'downtown_grid' | 'coastal_overpass' | 'live_gps' | 'benchmark'
+  // Live Device Geolocation Elements
+  const geoAccuracyVal = document.getElementById('geo-accuracy-val');
+  const geoCoordsVal = document.getElementById('geo-coords-val');
+  const geoAltitudeVal = document.getElementById('geo-altitude-val');
+  const geoSpeedVal = document.getElementById('geo-speed-val');
+  const geoTimestampVal = document.getElementById('geo-timestamp-val');
+  const pillOsm = document.getElementById('pill-osm');
+  const pillGps = document.getElementById('pill-gps');
+  const pillMatch = document.getElementById('pill-match');
+  const pillRoute = document.getElementById('pill-route');
+  const destStatusText = document.getElementById('dest-status-text');
+
+  // Optical Sensor Elements
+  const btnCameraSensor = document.getElementById('btn-camera-sensor');
+  const cameraSensorDock = document.getElementById('camera-sensor-dock');
+  const cameraVideo = document.getElementById('camera-video');
+  const btnCloseCamera = document.getElementById('btn-close-camera');
+  let cameraStream = null;
 
   // Simulation & Pacing State
   let targetFps = 30;
@@ -144,7 +158,7 @@
   // Evaluates live dynamic OSM routes (Downtown Grid, Roundabout, Overpass, Live GPS)
   // or the calibrated multi-topology benchmark loop.
   function getEgoPose(tSec) {
-    if (activeRouteMode !== 'benchmark' && window.osmRouter) {
+    if (window.osmRouter) {
       return window.osmRouter.getEgoPose(tSec);
     }
 
@@ -332,7 +346,7 @@
     }
 
     // 1b. Draw Active Dynamic OSM Route Trajectory & Turn Markers
-    if (chkNavRoute && chkNavRoute.checked && window.osmRouter && activeRouteMode !== 'benchmark') {
+    if (chkNavRoute && chkNavRoute.checked && window.osmRouter) {
       window.osmRouter.drawRouteOverlay(ctx, worldToCanvas, ego);
     }
 
@@ -703,15 +717,67 @@
   function drawWorldMap(mapData, ego) {
     ctx.save();
 
-    const activeNet = (activeRouteMode !== 'benchmark' && window.osmRouter && typeof window.osmRouter.getRoadNetworkElements === 'function')
+    const activeNet = (window.osmRouter && typeof window.osmRouter.getRoadNetworkElements === 'function')
       ? window.osmRouter.getRoadNetworkElements()
       : null;
 
-    if (activeNet) {
-      if (activeNet.is4Way) {
-        // 1. Central Intersection Box
-        if (activeNet.intersection) {
-          const inter = activeNet.intersection;
+    if (activeNet && activeNet.segments && activeNet.segments.length > 0) {
+      // 1. Draw all road segments in active OSM network
+      activeNet.segments.forEach(seg => {
+        const p1 = worldToCanvas(seg.start[0], seg.start[1]);
+        const p2 = worldToCanvas(seg.end[0], seg.end[1]);
+        const roadWidthPx = (seg.width || 14.0) * scale;
+
+        // Shoulder / sidewalk edge
+        ctx.beginPath();
+        ctx.moveTo(p1.px, p1.py);
+        ctx.lineTo(p2.px, p2.py);
+        ctx.strokeStyle = '#151f30';
+        ctx.lineWidth = roadWidthPx + 4.5 * scale;
+        ctx.lineCap = 'butt';
+        ctx.stroke();
+
+        // Asphalt surface
+        ctx.beginPath();
+        ctx.moveTo(p1.px, p1.py);
+        ctx.lineTo(p2.px, p2.py);
+        ctx.strokeStyle = '#0b111d';
+        ctx.lineWidth = roadWidthPx;
+        ctx.lineCap = 'butt';
+        ctx.stroke();
+
+        // Outer Curbs
+        ctx.strokeStyle = '#2d3f57';
+        ctx.lineWidth = 2.0;
+        ctx.stroke();
+
+        // Yellow dashed centerline
+        ctx.save();
+        ctx.strokeStyle = '#fbbf24';
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([8, 6]);
+        ctx.beginPath();
+        ctx.moveTo(p1.px, p1.py);
+        ctx.lineTo(p2.px, p2.py);
+        ctx.stroke();
+        ctx.restore();
+
+        // Floating Street Name Label (if road segment is long enough and camera is near)
+        const segLen = Math.hypot(seg.end[0] - seg.start[0], seg.end[1] - seg.start[1]);
+        const midX = (seg.start[0] + seg.end[0]) * 0.5;
+        const midY = (seg.start[1] + seg.end[1]) * 0.5;
+        const distEgo = Math.hypot(midX - ego.x, midY - ego.y);
+        if (segLen >= 40 && distEgo <= 120 && seg.name && seg.name !== 'Unnamed Roadway') {
+          const midCp = worldToCanvas(midX, midY);
+          ctx.fillStyle = 'rgba(148, 163, 184, 0.45)';
+          ctx.font = '7.5px JetBrains Mono, monospace';
+          ctx.fillText(seg.name, midCp.px - 30, midCp.py - roadWidthPx / 2 - 4);
+        }
+      });
+
+      // 2. Intersections & Crosswalks
+      if (activeNet.intersections) {
+        activeNet.intersections.forEach(inter => {
           const center = worldToCanvas(inter.center[0], inter.center[1]);
           const wPx = inter.size[0] * scale;
           const hPx = inter.size[1] * scale;
@@ -737,77 +803,29 @@
               ctx.restore();
             });
           }
-        }
-
-        // 2. Connected Arterial Road Segments (South, North, West, East)
-        if (activeNet.segments) {
-          activeNet.segments.forEach(seg => {
-            const p1 = worldToCanvas(seg.start[0], seg.start[1]);
-            const p2 = worldToCanvas(seg.end[0], seg.end[1]);
-            const roadWidthPx = (seg.width || 14.0) * scale;
-
-            ctx.beginPath();
-            ctx.moveTo(p1.px, p1.py);
-            ctx.lineTo(p2.px, p2.py);
-            ctx.strokeStyle = '#151f30';
-            ctx.lineWidth = roadWidthPx + 5.0 * scale;
-            ctx.lineCap = 'butt';
-            ctx.stroke();
-
-            ctx.beginPath();
-            ctx.moveTo(p1.px, p1.py);
-            ctx.lineTo(p2.px, p2.py);
-            ctx.strokeStyle = '#0b111d';
-            ctx.lineWidth = roadWidthPx;
-            ctx.lineCap = 'butt';
-            ctx.stroke();
-
-            ctx.strokeStyle = '#2d3f57';
-            ctx.lineWidth = 2.0;
-            ctx.stroke();
-
-            ctx.save();
-            ctx.strokeStyle = '#fbbf24';
-            ctx.lineWidth = 2.0;
-            ctx.setLineDash([8, 6]);
-            ctx.beginPath();
-            ctx.moveTo(p1.px, p1.py);
-            ctx.lineTo(p2.px, p2.py);
-            ctx.stroke();
-            ctx.restore();
-          });
-        }
-
-        // 3. Perimeter Return Loop
-        draw4WayReturnRoadways(activeRouteMode);
-
-        // 4. Traffic Signals
-        if (activeNet.trafficSignals) {
-          activeNet.trafficSignals.forEach(sig => {
-            const sp = worldToCanvas(sig.x, sig.y);
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(sp.px, sp.py, 4.0, 0, 2 * Math.PI);
-            ctx.fillStyle = sig.state === 'green' ? '#10b981' : '#ef4444';
-            ctx.shadowColor = sig.state === 'green' ? '#10b981' : '#ef4444';
-            ctx.shadowBlur = 8;
-            ctx.fill();
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 1.0;
-            ctx.stroke();
-            ctx.restore();
-          });
-        }
-
-        // 5. Fixed Static Landmarks
-        draw4WayStaticLandmarks();
-      } else if (activeNet.isRoundabout) {
-        drawRoundaboutRoadways(activeNet);
-      } else if (activeNet.isGrid) {
-        drawGridRoadways(activeNet);
-      } else if (activeNet.isCoastal) {
-        drawCoastalRoadways(activeNet);
+        });
       }
+
+      // 3. Traffic Signals
+      if (activeNet.trafficSignals) {
+        activeNet.trafficSignals.forEach(sig => {
+          const sp = worldToCanvas(sig.x, sig.y);
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(sp.px, sp.py, 4.0, 0, 2 * Math.PI);
+          ctx.fillStyle = sig.state === 'green' ? '#10b981' : '#ef4444';
+          ctx.shadowColor = sig.state === 'green' ? '#10b981' : '#ef4444';
+          ctx.shadowBlur = 8;
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.0;
+          ctx.stroke();
+          ctx.restore();
+        });
+      }
+
+      // 4. Fixed Static Landmarks around the road network
+      draw4WayStaticLandmarks();
     } else {
       // Benchmark Mode: Default calibrated multi-topology road segments
       if (mapData && mapData.segments) {
@@ -2521,61 +2539,12 @@
       }
     });
 
-    // Quick Junction Decision Buttons (Straight, Left, Right)
-    const junctionButtons = document.querySelectorAll('.junc-btn');
-    junctionButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        junctionButtons.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const turnKey = btn.getAttribute('data-turn');
-        activeRouteMode = turnKey;
-        if (routePresetSelect) {
-          routePresetSelect.value = turnKey;
-        }
-        if (window.osmRouter) {
-          window.osmRouter.loadPresetByKey(turnKey);
-        }
-        render();
-      });
-    });
-
-    // Dynamic Road Network Preset Dropdown
-    if (routePresetSelect) {
-      routePresetSelect.addEventListener('change', (e) => {
-        const val = e.target.value;
-        activeRouteMode = val;
-
-        // Synchronize junction decision buttons if applicable
-        junctionButtons.forEach(b => {
-          if (b.getAttribute('data-turn') === val) {
-            b.classList.add('active');
-          } else {
-            b.classList.remove('active');
-          }
-        });
-
-        if (val === 'live_gps') {
-          triggerGpsAcquisition();
-        } else if (val === 'benchmark') {
-          if (routeStatusChip) routeStatusChip.textContent = '● BENCHMARK 180s';
-          if (routeRoadType) routeRoadType.textContent = 'Multi-Topology Benchmark';
-          if (routeRoadName) routeRoadName.textContent = 'Transit Corridor & Boulevard';
-          render();
-        } else if (window.osmRouter) {
-          window.osmRouter.loadPresetByKey(val);
-          render();
-        }
-      });
+    // Live Location & OpenStreetMap Autonomous Tracking Initiation
+    if (window.osmRouter) {
+      window.osmRouter.startLiveTracking();
     }
 
-    // Live GPS Button
-    if (btnLiveGps) {
-      btnLiveGps.addEventListener('click', () => {
-        triggerGpsAcquisition();
-      });
-    }
-
-    // Live Navigation Telemetry Listener
+    // Live Navigation & Road Network Telemetry Listener
     if (window.osmRouter) {
       window.osmRouter.onUpdate((tel) => {
         if (routeRoadName) routeRoadName.textContent = tel.roadName;
@@ -2585,17 +2554,59 @@
         if (routeManeuverDist) routeManeuverDist.textContent = `in ${tel.maneuverDistM} m`;
         if (routeProgressVal) routeProgressVal.textContent = `${tel.progressPercent.toFixed(0)}%`;
         if (routeStatusChip) {
-          routeStatusChip.textContent = tel.isLiveNetwork ? '● OSM LIVE' : (tel.statusBadge === 'GPS LIVE' ? '● GPS LIVE' : '● OSM VERIFIED');
+          routeStatusChip.textContent = tel.isLiveNetwork ? '● OSM LIVE' : '● OSM CONNECTED';
+        }
+
+        // Live Geolocation readout updates
+        if (geoAccuracyVal) geoAccuracyVal.textContent = `ACCURACY: \u00b1${tel.locationAccuracy || 8} m`;
+        if (geoCoordsVal && tel.coordsText) geoCoordsVal.textContent = tel.coordsText;
+        if (geoAltitudeVal) {
+          const altPart = tel.altSpeedText ? tel.altSpeedText.split('|')[0].trim() : 'ALT: 12 m';
+          geoAltitudeVal.textContent = altPart;
+        }
+        if (geoSpeedVal) {
+          const spdPart = tel.altSpeedText ? tel.altSpeedText.split('|')[1]?.trim() : `SPEED: ${tel.speedKmh ? tel.speedKmh.toFixed(1) : '35.0'} km/h`;
+          geoSpeedVal.textContent = spdPart || 'SPEED: 35.0 km/h';
+        }
+        if (geoTimestampVal && tel.timestampText) {
+          geoTimestampVal.textContent = `TIME: ${tel.timestampText}`;
+        }
+
+        // Update pills
+        if (pillOsm) {
+          pillOsm.textContent = tel.isLiveNetwork ? '● OSM LIVE' : '● OSM CONNECTED';
+          pillOsm.className = tel.isLiveNetwork ? 'status-pill status-pill-green' : 'status-pill status-pill-cyan';
+        }
+        if (pillGps) {
+          pillGps.textContent = tel.statusBadge || '● DEVICE GEOLOCATION';
+        }
+
+        // Update destination status tip
+        if (destStatusText) {
+          if (window.osmRouter.destination) {
+            destStatusText.innerHTML = `<strong>Target:</strong> (${Math.round(window.osmRouter.destination.x)}m, ${Math.round(window.osmRouter.destination.y)}m) <button id="btn-clear-target" style="background:#ef4444;color:#fff;border:none;border-radius:4px;padding:2px 8px;margin-left:8px;cursor:pointer;font-size:10px;font-weight:bold;">Clear</button>`;
+            const btnClr = document.getElementById('btn-clear-target');
+            if (btnClr) {
+              btnClr.onclick = (ev) => {
+                ev.stopPropagation();
+                window.osmRouter.clearDestination();
+                destStatusText.textContent = 'Click anywhere on map to set a dynamic route destination';
+                render();
+              };
+            }
+          } else {
+            destStatusText.textContent = 'Click anywhere on map to set a dynamic route destination';
+          }
         }
 
         // Update floating turn banner on canvas
-        if (navHudFloating && chkNavRoute && chkNavRoute.checked && activeRouteMode !== 'benchmark') {
+        if (navHudFloating && chkNavRoute && chkNavRoute.checked) {
           navHudFloating.style.display = 'flex';
           if (navHudIcon) navHudIcon.textContent = tel.maneuverIcon;
           if (navHudAction) navHudAction.textContent = `In ${tel.maneuverDistM} m`;
           if (navHudRoad) navHudRoad.textContent = tel.roadName;
           if (navHudBadge) {
-            navHudBadge.textContent = tel.isLiveNetwork ? '● LIVE OSM' : '● OSM CACHED';
+            navHudBadge.textContent = tel.isLiveNetwork ? '● LIVE OSM' : '● OSM VERIFIED';
           }
         } else if (navHudFloating) {
           navHudFloating.style.display = 'none';
@@ -2603,26 +2614,61 @@
       });
     }
 
-  function triggerGpsAcquisition() {
-    if (routeStatusChip) routeStatusChip.textContent = '● ACQUIRING GPS...';
-    if (btnLiveGps) btnLiveGps.innerHTML = '<span class="gps-icon">🛰</span> Acquiring Satellite Fix...';
-    if (window.osmRouter) {
-      window.osmRouter.requestLiveGPS((success, msg) => {
-        if (btnLiveGps) btnLiveGps.innerHTML = '<span class="gps-icon">⌖</span> Acquire Live GPS Route';
-        if (success) {
-          activeRouteMode = 'live_gps';
-          if (routePresetSelect) routePresetSelect.value = 'live_gps';
-        } else {
-          console.warn('GPS notification:', msg);
+    // Optional Live Optical Camera Sensor Hookup
+    if (btnCameraSensor && cameraSensorDock && cameraVideo) {
+      btnCameraSensor.addEventListener('click', async () => {
+        if (cameraStream) {
+          cameraStream.getTracks().forEach(track => track.stop());
+          cameraStream = null;
+          cameraSensorDock.style.display = 'none';
+          btnCameraSensor.innerHTML = '<span class="cam-icon">📷</span> Connect Live Camera Sensor (Optional)';
+          return;
         }
-        render();
+
+        try {
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert('MediaDevices API not supported on this browser or insecure origin.');
+            return;
+          }
+          btnCameraSensor.innerHTML = '<span class="cam-icon">⏳</span> Requesting Camera Access...';
+          cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+            audio: false
+          });
+          cameraVideo.srcObject = cameraStream;
+          cameraSensorDock.style.display = 'block';
+          btnCameraSensor.innerHTML = '<span class="cam-icon">📷</span> Disconnect Optical Sensor';
+        } catch (err) {
+          console.warn('Live camera permission note:', err);
+          btnCameraSensor.innerHTML = '<span class="cam-icon">📷</span> Camera Access Denied / Unavailable';
+          setTimeout(() => {
+            btnCameraSensor.innerHTML = '<span class="cam-icon">📷</span> Connect Live Camera Sensor (Optional)';
+          }, 3000);
+        }
       });
+
+      if (btnCloseCamera) {
+        btnCloseCamera.addEventListener('click', () => {
+          if (cameraStream) {
+            cameraStream.getTracks().forEach(track => track.stop());
+            cameraStream = null;
+          }
+          cameraSensorDock.style.display = 'none';
+          btnCameraSensor.innerHTML = '<span class="cam-icon">📷</span> Connect Live Camera Sensor (Optional)';
+        });
+      }
     }
-  }
 
     // Mouse Pan Interaction
+    let dragMoved = false;
+    let mouseDownX = 0;
+    let mouseDownY = 0;
+
     canvas.addEventListener('mousedown', (e) => {
       isDragging = true;
+      dragMoved = false;
+      mouseDownX = e.clientX;
+      mouseDownY = e.clientY;
       dragStartX = e.clientX - offsetX;
       dragStartY = e.clientY - offsetY;
     });
@@ -2633,6 +2679,9 @@
 
     canvas.addEventListener('mousemove', (e) => {
       if (isDragging) {
+        if (Math.hypot(e.clientX - mouseDownX, e.clientY - mouseDownY) > 5) {
+          dragMoved = true;
+        }
         // Switching to free mode on drag
         cameraMode = 'free';
         btnCameraMode.classList.remove('active');
@@ -2697,8 +2746,10 @@
       }
     });
 
-    // Click to Select & Lock Entity
+    // Click to Select & Lock Entity or Set Dynamic Route Destination
     canvas.addEventListener('click', (e) => {
+      if (dragMoved) return; // Prevent triggering destination click on pan drag release
+
       const rect = canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
@@ -2712,6 +2763,11 @@
       } else {
         selectedEntity = null;
         populateInspector(null);
+
+        // Set dynamic destination along active road network
+        if (window.osmRouter) {
+          window.osmRouter.setDestination(worldCoord.x, worldCoord.y);
+        }
       }
       render();
     });

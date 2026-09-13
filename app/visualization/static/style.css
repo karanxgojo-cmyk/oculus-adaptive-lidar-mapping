@@ -969,61 +969,149 @@ input:checked + .slider:before {
   color: #f1f5f9;
 }
 
-.junction-btn-group {
-  display: flex;
-  flex-direction: column;
+/* Live Status Indicators Grid */
+.live-status-chips-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 4px;
   margin-bottom: 8px;
 }
 
-.junction-btn-label {
-  font-size: 0.60rem;
+.status-pill {
+  font-size: 0.58rem;
   font-family: var(--font-mono);
-  color: var(--text-muted);
-  letter-spacing: 0.5px;
+  font-weight: 700;
+  padding: 3px 6px;
+  border-radius: 4px;
+  text-align: center;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.junction-btns {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 5px;
+.status-pill-green {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #34d399;
 }
 
-.junc-btn {
-  background: #090d16;
-  border: 1px solid rgba(6, 182, 212, 0.3);
+.status-pill-cyan {
+  background: rgba(6, 182, 212, 0.12);
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  color: #22d3ee;
+}
+
+.status-pill-blue {
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: #60a5fa;
+}
+
+.status-pill-amber {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+}
+
+/* Device Geolocation & GNSS Accuracy Box */
+.geo-telemetry-box {
+  background: #070b13;
+  border: 1px solid rgba(6, 182, 212, 0.25);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.geo-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.geo-label {
+  font-size: 0.56rem;
+  font-family: var(--font-mono);
   color: #94a3b8;
-  border-radius: 5px;
-  padding: 5px 6px;
-  font-size: 0.68rem;
+  letter-spacing: 0.4px;
+  font-weight: 600;
+}
+
+.geo-accuracy-badge {
+  font-size: 0.56rem;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.geo-coords-val {
+  font-size: 0.72rem;
   font-family: var(--font-mono);
   font-weight: 600;
+  color: #f8fafc;
+}
+
+.geo-sub-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.58rem;
+  font-family: var(--font-mono);
+  color: #64748b;
+}
+
+/* Destination Instruction Bar */
+.dest-instruction-bar {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px dashed rgba(6, 182, 212, 0.3);
+  border-radius: 5px;
+  padding: 5px 7px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.62rem;
+  font-family: var(--font-mono);
+  color: #94a3b8;
   cursor: pointer;
   transition: all 0.2s;
-  text-align: center;
 }
 
-.junc-btn:hover {
+.dest-instruction-bar:hover {
   border-color: #06b6d4;
   color: #22d3ee;
-  background: rgba(6, 182, 212, 0.12);
+  background: rgba(6, 182, 212, 0.08);
 }
 
-.junc-btn.active {
-  background: linear-gradient(135deg, rgba(6, 182, 212, 0.25), rgba(59, 130, 246, 0.25));
-  border-color: #06b6d4;
-  color: #22d3ee;
-  box-shadow: 0 0 8px rgba(6, 182, 212, 0.35);
+.dest-icon {
+  font-size: 0.85rem;
 }
 
-.btn-gps {
+.dest-text {
+  line-height: 1.2;
+}
+
+/* Optional Camera Sensor Button & Dock */
+.camera-action-row {
+  margin-top: 6px;
+  margin-bottom: 8px;
+}
+
+.btn-camera {
   width: 100%;
-  background: linear-gradient(135deg, rgba(6, 182, 212, 0.16), rgba(59, 130, 246, 0.16));
-  border: 1px solid rgba(6, 182, 212, 0.45);
-  color: #22d3ee;
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 0.70rem;
+  background: #090e18;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 0.65rem;
   font-family: var(--font-mono);
   font-weight: 600;
   cursor: pointer;
@@ -1031,19 +1119,66 @@ input:checked + .slider:before {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  margin-bottom: 8px;
   transition: all 0.2s ease;
 }
 
-.btn-gps:hover {
-  background: linear-gradient(135deg, rgba(6, 182, 212, 0.3), rgba(59, 130, 246, 0.3));
-  border-color: #22d3ee;
-  color: #ffffff;
-  box-shadow: 0 0 10px rgba(6, 182, 212, 0.35);
+.btn-camera:hover {
+  border-color: #06b6d4;
+  color: #22d3ee;
+  background: rgba(6, 182, 212, 0.08);
 }
 
-.gps-icon {
-  font-size: 0.85rem;
+.camera-sensor-dock {
+  position: relative;
+  width: 100%;
+  height: 120px;
+  background: #05080e;
+  border: 1px solid #06b6d4;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.camera-sensor-dock video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.camera-overlay-bar {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(5, 8, 14, 0.75);
+  backdrop-filter: blur(4px);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.cam-status-text {
+  font-size: 0.55rem;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: #10b981;
+}
+
+.btn-cam-close {
+  background: none;
+  border: none;
+  color: #ef4444;
+  font-size: 0.75rem;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.tag-geo {
+  border-color: rgba(6, 182, 212, 0.4) !important;
+  color: #22d3ee !important;
 }
 
 .route-telemetry-grid {
