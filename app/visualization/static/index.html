@@ -174,12 +174,25 @@
           <label class="route-select-label" for="route-preset-select">TOPOLOGY / CITY:</label>
           <div class="select-row">
             <select id="route-preset-select" class="route-dropdown">
-              <option value="downtown_grid">SF Downtown Tech Grid (4-Way Junctions &amp; Turns)</option>
+              <option value="4way_straight" selected>4-Way Intersection (Straight Through)</option>
+              <option value="4way_left">4-Way Intersection (Left Turn onto West Ave)</option>
+              <option value="4way_right">4-Way Intersection (Right Turn onto East Ave)</option>
               <option value="plaza_roundabout">Paris Arc de Triomphe (12-Lane Roundabout)</option>
-              <option value="coastal_overpass">Seattle Coastal Waterfront (Overpass &amp; Bridge)</option>
+              <option value="downtown_grid">SF Downtown Tech Grid (Multi-Block)</option>
+              <option value="coastal_overpass">Seattle Coastal Waterfront &amp; Viaduct</option>
               <option value="live_gps">📍 Live GPS Location (Browser Geolocation)</option>
               <option value="benchmark">Calibrated Multi-Topology Benchmark (180s)</option>
             </select>
+          </div>
+        </div>
+
+        <!-- Quick Intersection Decision Buttons -->
+        <div class="junction-btn-group" id="junction-decision-group">
+          <span class="junction-btn-label">JUNCTION DECISION:</span>
+          <div class="junction-btns">
+            <button class="junc-btn active" data-turn="4way_straight">⬆ Straight</button>
+            <button class="junc-btn" data-turn="4way_left">↰ Left</button>
+            <button class="junc-btn" data-turn="4way_right">↱ Right</button>
           </div>
         </div>
 

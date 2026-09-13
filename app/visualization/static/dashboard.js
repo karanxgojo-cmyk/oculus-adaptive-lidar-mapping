@@ -69,7 +69,7 @@
   const navHudRoad = document.getElementById('nav-hud-road');
 
   // Dynamic Route Engine State
-  let activeRouteMode = 'downtown_grid'; // 'downtown_grid' | 'plaza_roundabout' | 'coastal_overpass' | 'live_gps' | 'benchmark'
+  let activeRouteMode = '4way_straight'; // '4way_straight' | '4way_left' | '4way_right' | 'plaza_roundabout' | 'downtown_grid' | 'coastal_overpass' | 'live_gps' | 'benchmark'
 
   // Simulation & Pacing State
   let targetFps = 30;
@@ -367,17 +367,310 @@
   }
 
   // --------------------------------------------------------------------------
-  // 1. FIXED STATIC WORLD MAP (PERMANENT WORLD COORDINATES)
   // --------------------------------------------------------------------------
-  function drawWorldMap(mapData, ego) {
+  // 1. FIXED STATIC WORLD MAP & ACTIVE ROAD NETWORK (PERMANENT WORLD COORDINATES)
+  // --------------------------------------------------------------------------
+
+  // Helper: Draw continuous connecting return roadways for 4-Way Intersection presets
+  function draw4WayReturnRoadways(mode) {
+    ctx.save();
+    ctx.strokeStyle = '#0b111d';
+    ctx.lineWidth = 12.0 * scale;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    let returnPts = [];
+    if (mode === '4way_left') {
+      returnPts = [
+        [-180, 0], [-190, -80], [-150, -160], [-60, -185], [0, -180]
+      ];
+    } else if (mode === '4way_right') {
+      returnPts = [
+        [180, 0], [190, -80], [150, -160], [60, -185], [0, -180]
+      ];
+    } else {
+      returnPts = [
+        [0, 180], [60, 190], [120, 150], [120, -150], [60, -190], [0, -180]
+      ];
+    }
+
+    if (returnPts.length > 1) {
+      // Road Asphalt Base
+      ctx.beginPath();
+      const p0 = worldToCanvas(returnPts[0][0], returnPts[0][1]);
+      ctx.moveTo(p0.px, p0.py);
+      for (let i = 1; i < returnPts.length; i++) {
+        const cp = worldToCanvas(returnPts[i][0], returnPts[i][1]);
+        ctx.lineTo(cp.px, cp.py);
+      }
+      ctx.stroke();
+
+      // Road Curbs
+      ctx.strokeStyle = '#223247';
+      ctx.lineWidth = 2.0;
+      ctx.stroke();
+
+      // Yellow Dashed Centerline
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 1.8;
+      ctx.setLineDash([8, 6]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+
+  // Helper: Draw fixed static landmarks around 4-Way Intersection
+  function draw4WayStaticLandmarks() {
     ctx.save();
 
-    // Road Segments
-    if (mapData.segments) {
-      mapData.segments.forEach(seg => {
+    // 4 Corner Urban Buildings
+    const cornerBuildings = [
+      { x: 28, y: 28, w: 48, h: 48, label: 'Tech Tower (NE)' },
+      { x: -76, y: 28, w: 48, h: 48, label: 'Financial Center (NW)' },
+      { x: -76, y: -76, w: 48, h: 48, label: 'Transit Terminal (SW)' },
+      { x: 28, y: -76, w: 48, h: 48, label: 'Commerce Plaza (SE)' }
+    ];
+
+    cornerBuildings.forEach(b => {
+      const bp = worldToCanvas(b.x + b.w / 2, b.y + b.h / 2);
+      const bw = b.w * scale;
+      const bh = b.h * scale;
+
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+      ctx.fillRect(bp.px - bw / 2, bp.py - bh / 2, bw, bh);
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(bp.px - bw / 2, bp.py - bh / 2, bw, bh);
+
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.75)';
+      ctx.font = '8px JetBrains Mono, monospace';
+      ctx.fillText(b.label, bp.px - bw / 2 + 5, bp.py - bh / 2 + 14);
+    });
+
+    // Street light poles along sidewalks
+    const poles = [
+      { x: 8.5, y: -40 }, { x: -8.5, y: -40 },
+      { x: 8.5, y: -90 }, { x: -8.5, y: -90 },
+      { x: 8.5, y: -140 }, { x: -8.5, y: -140 },
+      { x: 8.5, y: 40 }, { x: -8.5, y: 40 },
+      { x: 8.5, y: 90 }, { x: -8.5, y: 90 },
+      { x: 8.5, y: 140 }, { x: -8.5, y: 140 },
+      { x: -40, y: 8.5 }, { x: -40, y: -8.5 },
+      { x: -90, y: 8.5 }, { x: -90, y: -8.5 },
+      { x: -140, y: 8.5 }, { x: -140, y: -8.5 },
+      { x: 40, y: 8.5 }, { x: 40, y: -8.5 },
+      { x: 90, y: 8.5 }, { x: 90, y: -8.5 },
+      { x: 140, y: 8.5 }, { x: 140, y: -8.5 }
+    ];
+
+    poles.forEach(p => {
+      const pt = worldToCanvas(p.x, p.y);
+      ctx.beginPath();
+      ctx.arc(pt.px, pt.py, 3.2, 0, 2 * Math.PI);
+      ctx.fillStyle = '#475569';
+      ctx.fill();
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+
+    // Sidewalk shade trees along sidewalks
+    const trees = [
+      { x: 11.5, y: -60, r: 3.5 }, { x: -11.5, y: -60, r: 3.5 },
+      { x: 11.5, y: -115, r: 3.5 }, { x: -11.5, y: -115, r: 3.5 },
+      { x: 11.5, y: 60, r: 3.5 }, { x: -11.5, y: 60, r: 3.5 },
+      { x: 11.5, y: 115, r: 3.5 }, { x: -11.5, y: 115, r: 3.5 },
+      { x: -60, y: 11.5, r: 3.5 }, { x: -60, y: -11.5, r: 3.5 },
+      { x: -115, y: 11.5, r: 3.5 }, { x: -115, y: -11.5, r: 3.5 },
+      { x: 60, y: 11.5, r: 3.5 }, { x: 60, y: -11.5, r: 3.5 },
+      { x: 115, y: 11.5, r: 3.5 }, { x: 115, y: -11.5, r: 3.5 }
+    ];
+
+    trees.forEach(tr => {
+      const pt = worldToCanvas(tr.x, tr.y);
+      const rPx = tr.r * scale;
+      ctx.beginPath();
+      ctx.arc(pt.px, pt.py, rPx, 0, 2 * Math.PI);
+      ctx.fillStyle = 'rgba(22, 101, 52, 0.45)';
+      ctx.fill();
+      ctx.strokeStyle = '#15803d';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(pt.px, pt.py, rPx * 0.4, 0, 2 * Math.PI);
+      ctx.fillStyle = 'rgba(34, 197, 94, 0.6)';
+      ctx.fill();
+    });
+
+    ctx.restore();
+  }
+
+  // Helper: Draw geometric roundabout road network (Arc de Triomphe)
+  function drawRoundaboutRoadways(net) {
+    ctx.save();
+    const rCenter = worldToCanvas(net.roundaboutCenter[0], net.roundaboutCenter[1]);
+    const rOuter = (net.roundaboutRadius + 9.0) * scale;
+    const rCenterline = net.roundaboutRadius * scale;
+    const rInner = net.islandRadius * scale;
+
+    // 1. Outer asphalt rotary circle
+    ctx.beginPath();
+    ctx.arc(rCenter.px, rCenter.py, rOuter, 0, 2 * Math.PI);
+    ctx.fillStyle = '#0b111d';
+    ctx.fill();
+
+    // 2. Inner Central Island
+    ctx.beginPath();
+    ctx.arc(rCenter.px, rCenter.py, rInner, 0, 2 * Math.PI);
+    ctx.fillStyle = '#061018';
+    ctx.fill();
+    ctx.strokeStyle = '#223247';
+    ctx.lineWidth = 3.0;
+    ctx.stroke();
+
+    // 3. Central Monument Plinth (Arc de Triomphe)
+    const plinthW = 26.0 * scale;
+    const plinthH = 18.0 * scale;
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(rCenter.px - plinthW / 2, rCenter.py - plinthH / 2, plinthW, plinthH);
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 8;
+    ctx.strokeRect(rCenter.px - plinthW / 2, rCenter.py - plinthH / 2, plinthW, plinthH);
+    ctx.shadowBlur = 0;
+
+    // Archway cutout
+    ctx.fillStyle = '#060a12';
+    ctx.fillRect(rCenter.px - plinthW * 0.22, rCenter.py - plinthH / 2, plinthW * 0.44, plinthH);
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = 'bold 8px JetBrains Mono, monospace';
+    ctx.fillText('Arc de Triomphe', rCenter.px - 38, rCenter.py + 3);
+
+    // 4. Circular Lane Centerline & Dashes
+    // Outer curb
+    ctx.beginPath();
+    ctx.arc(rCenter.px, rCenter.py, rOuter, 0, 2 * Math.PI);
+    ctx.strokeStyle = '#223247';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // Centerline Yellow Dash
+    ctx.beginPath();
+    ctx.arc(rCenter.px, rCenter.py, rCenterline, 0, 2 * Math.PI);
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 2.0;
+    ctx.setLineDash([8, 6]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 5. Radial Spoke Avenues
+    if (net.segments) {
+      net.segments.forEach(seg => {
         const p1 = worldToCanvas(seg.start[0], seg.start[1]);
         const p2 = worldToCanvas(seg.end[0], seg.end[1]);
-        const roadWidthPx = seg.width * scale;
+        const wPx = seg.width * scale;
+
+        ctx.beginPath();
+        ctx.moveTo(p1.px, p1.py);
+        ctx.lineTo(p2.px, p2.py);
+        ctx.strokeStyle = '#0b111d';
+        ctx.lineWidth = wPx;
+        ctx.stroke();
+
+        ctx.strokeStyle = '#223247';
+        ctx.lineWidth = 2.0;
+        ctx.stroke();
+
+        ctx.strokeStyle = '#fbbf24';
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([8, 6]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      });
+    }
+
+    // 6. Return Connector Road from Exit to Entry
+    const returnPts = [
+      [80, 70], [140, 120], [80, 160], [-60, 160], [-170, 0], [-140, -120]
+    ];
+    ctx.beginPath();
+    const rp0 = worldToCanvas(returnPts[0][0], returnPts[0][1]);
+    ctx.moveTo(rp0.px, rp0.py);
+    for (let i = 1; i < returnPts.length; i++) {
+      const cp = worldToCanvas(returnPts[i][0], returnPts[i][1]);
+      ctx.lineTo(cp.px, cp.py);
+    }
+    ctx.strokeStyle = '#0b111d';
+    ctx.lineWidth = 12.0 * scale;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.strokeStyle = '#223247';
+    ctx.lineWidth = 2.0;
+    ctx.stroke();
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 1.8;
+    ctx.setLineDash([8, 6]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.restore();
+  }
+
+  // Helper: Draw Downtown Street Grid
+  function drawGridRoadways(net) {
+    ctx.save();
+    if (net.segments) {
+      net.segments.forEach(seg => {
+        const p1 = worldToCanvas(seg.start[0], seg.start[1]);
+        const p2 = worldToCanvas(seg.end[0], seg.end[1]);
+        const wPx = seg.width * scale;
+
+        ctx.beginPath();
+        ctx.moveTo(p1.px, p1.py);
+        ctx.lineTo(p2.px, p2.py);
+        ctx.strokeStyle = '#0b111d';
+        ctx.lineWidth = wPx;
+        ctx.stroke();
+
+        ctx.strokeStyle = '#223247';
+        ctx.lineWidth = 2.0;
+        ctx.stroke();
+
+        ctx.strokeStyle = '#fbbf24';
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([8, 6]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      });
+    }
+
+    if (net.intersections) {
+      net.intersections.forEach(inter => {
+        const cp = worldToCanvas(inter.center[0], inter.center[1]);
+        const wPx = inter.size[0] * scale;
+        const hPx = inter.size[1] * scale;
+
+        ctx.fillStyle = '#0b111d';
+        ctx.fillRect(cp.px - wPx / 2, cp.py - hPx / 2, wPx, hPx);
+        ctx.strokeStyle = '#223247';
+        ctx.lineWidth = 2.0;
+        ctx.strokeRect(cp.px - wPx / 2, cp.py - hPx / 2, wPx, hPx);
+      });
+    }
+    ctx.restore();
+  }
+
+  // Helper: Draw Coastal Overpass & Viaduct
+  function drawCoastalRoadways(net) {
+    ctx.save();
+    if (net.segments) {
+      net.segments.forEach(seg => {
+        const p1 = worldToCanvas(seg.start[0], seg.start[1]);
+        const p2 = worldToCanvas(seg.end[0], seg.end[1]);
+        const wPx = seg.width * scale;
 
         ctx.beginPath();
         ctx.moveTo(p1.px, p1.py);
@@ -388,18 +681,15 @@
           ctx.lineTo(p2.px, p2.py);
         }
 
-        // Road Asphalt
-        ctx.strokeStyle = '#0e1626';
-        ctx.lineWidth = roadWidthPx;
+        ctx.strokeStyle = '#0b111d';
+        ctx.lineWidth = wPx;
         ctx.lineCap = 'round';
         ctx.stroke();
 
-        // Curbs / Road Outer Edges
         ctx.strokeStyle = '#223247';
         ctx.lineWidth = 2.0;
         ctx.stroke();
 
-        // Centerline (Yellow dashed)
         ctx.strokeStyle = '#fbbf24';
         ctx.lineWidth = 1.8;
         ctx.setLineDash([8, 6]);
@@ -407,36 +697,178 @@
         ctx.setLineDash([]);
       });
     }
+    ctx.restore();
+  }
 
-    // 4-Way Urban Intersection & Zebra Crosswalks
-    if (mapData.intersection) {
-      const inter = mapData.intersection;
-      const center = worldToCanvas(inter.center[0], inter.center[1]);
-      const wPx = inter.size[0] * scale;
-      const hPx = inter.size[1] * scale;
+  function drawWorldMap(mapData, ego) {
+    ctx.save();
 
-      // Intersection Asphalt Box
-      ctx.fillStyle = '#0e1626';
-      ctx.fillRect(center.px - wPx / 2, center.py - hPx / 2, wPx, hPx);
-      ctx.strokeStyle = '#334155';
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(center.px - wPx / 2, center.py - hPx / 2, wPx, hPx);
+    const activeNet = (activeRouteMode !== 'benchmark' && window.osmRouter && typeof window.osmRouter.getRoadNetworkElements === 'function')
+      ? window.osmRouter.getRoadNetworkElements()
+      : null;
 
-      // Zebra Crosswalk Stripes
-      if (inter.crosswalks) {
-        inter.crosswalks.forEach(cw => {
-          const pt1 = worldToCanvas(cw.p1[0], cw.p1[1]);
-          const pt2 = worldToCanvas(cw.p2[0], cw.p2[1]);
-          ctx.save();
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-          ctx.lineWidth = 3.6;
-          ctx.setLineDash([6, 4]);
+    if (activeNet) {
+      if (activeNet.is4Way) {
+        // 1. Central Intersection Box
+        if (activeNet.intersection) {
+          const inter = activeNet.intersection;
+          const center = worldToCanvas(inter.center[0], inter.center[1]);
+          const wPx = inter.size[0] * scale;
+          const hPx = inter.size[1] * scale;
+
+          ctx.fillStyle = '#0b111d';
+          ctx.fillRect(center.px - wPx / 2, center.py - hPx / 2, wPx, hPx);
+          ctx.strokeStyle = '#223247';
+          ctx.lineWidth = 2.0;
+          ctx.strokeRect(center.px - wPx / 2, center.py - hPx / 2, wPx, hPx);
+
+          if (inter.crosswalks) {
+            inter.crosswalks.forEach(cw => {
+              const pt1 = worldToCanvas(cw.p1[0], cw.p1[1]);
+              const pt2 = worldToCanvas(cw.p2[0], cw.p2[1]);
+              ctx.save();
+              ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+              ctx.lineWidth = (cw.width || 3.6) * scale * 0.8;
+              ctx.setLineDash([7, 5]);
+              ctx.beginPath();
+              ctx.moveTo(pt1.px, pt1.py);
+              ctx.lineTo(pt2.px, pt2.py);
+              ctx.stroke();
+              ctx.restore();
+            });
+          }
+        }
+
+        // 2. Connected Arterial Road Segments (South, North, West, East)
+        if (activeNet.segments) {
+          activeNet.segments.forEach(seg => {
+            const p1 = worldToCanvas(seg.start[0], seg.start[1]);
+            const p2 = worldToCanvas(seg.end[0], seg.end[1]);
+            const roadWidthPx = (seg.width || 14.0) * scale;
+
+            ctx.beginPath();
+            ctx.moveTo(p1.px, p1.py);
+            ctx.lineTo(p2.px, p2.py);
+            ctx.strokeStyle = '#151f30';
+            ctx.lineWidth = roadWidthPx + 5.0 * scale;
+            ctx.lineCap = 'butt';
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(p1.px, p1.py);
+            ctx.lineTo(p2.px, p2.py);
+            ctx.strokeStyle = '#0b111d';
+            ctx.lineWidth = roadWidthPx;
+            ctx.lineCap = 'butt';
+            ctx.stroke();
+
+            ctx.strokeStyle = '#2d3f57';
+            ctx.lineWidth = 2.0;
+            ctx.stroke();
+
+            ctx.save();
+            ctx.strokeStyle = '#fbbf24';
+            ctx.lineWidth = 2.0;
+            ctx.setLineDash([8, 6]);
+            ctx.beginPath();
+            ctx.moveTo(p1.px, p1.py);
+            ctx.lineTo(p2.px, p2.py);
+            ctx.stroke();
+            ctx.restore();
+          });
+        }
+
+        // 3. Perimeter Return Loop
+        draw4WayReturnRoadways(activeRouteMode);
+
+        // 4. Traffic Signals
+        if (activeNet.trafficSignals) {
+          activeNet.trafficSignals.forEach(sig => {
+            const sp = worldToCanvas(sig.x, sig.y);
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(sp.px, sp.py, 4.0, 0, 2 * Math.PI);
+            ctx.fillStyle = sig.state === 'green' ? '#10b981' : '#ef4444';
+            ctx.shadowColor = sig.state === 'green' ? '#10b981' : '#ef4444';
+            ctx.shadowBlur = 8;
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.0;
+            ctx.stroke();
+            ctx.restore();
+          });
+        }
+
+        // 5. Fixed Static Landmarks
+        draw4WayStaticLandmarks();
+      } else if (activeNet.isRoundabout) {
+        drawRoundaboutRoadways(activeNet);
+      } else if (activeNet.isGrid) {
+        drawGridRoadways(activeNet);
+      } else if (activeNet.isCoastal) {
+        drawCoastalRoadways(activeNet);
+      }
+    } else {
+      // Benchmark Mode: Default calibrated multi-topology road segments
+      if (mapData && mapData.segments) {
+        mapData.segments.forEach(seg => {
+          const p1 = worldToCanvas(seg.start[0], seg.start[1]);
+          const p2 = worldToCanvas(seg.end[0], seg.end[1]);
+          const roadWidthPx = seg.width * scale;
+
           ctx.beginPath();
-          ctx.moveTo(pt1.px, pt1.py);
-          ctx.lineTo(pt2.px, pt2.py);
+          ctx.moveTo(p1.px, p1.py);
+          if (seg.control) {
+            const cp = worldToCanvas(seg.control[0], seg.control[1]);
+            ctx.quadraticCurveTo(cp.px, cp.py, p2.px, p2.py);
+          } else {
+            ctx.lineTo(p2.px, p2.py);
+          }
+
+          ctx.strokeStyle = '#0e1626';
+          ctx.lineWidth = roadWidthPx;
+          ctx.lineCap = 'round';
           ctx.stroke();
-          ctx.restore();
+
+          ctx.strokeStyle = '#223247';
+          ctx.lineWidth = 2.0;
+          ctx.stroke();
+
+          ctx.strokeStyle = '#fbbf24';
+          ctx.lineWidth = 1.8;
+          ctx.setLineDash([8, 6]);
+          ctx.stroke();
+          ctx.setLineDash([]);
         });
+      }
+
+      if (mapData && mapData.intersection) {
+        const inter = mapData.intersection;
+        const center = worldToCanvas(inter.center[0], inter.center[1]);
+        const wPx = inter.size[0] * scale;
+        const hPx = inter.size[1] * scale;
+
+        ctx.fillStyle = '#0e1626';
+        ctx.fillRect(center.px - wPx / 2, center.py - hPx / 2, wPx, hPx);
+        ctx.strokeStyle = '#334155';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(center.px - wPx / 2, center.py - hPx / 2, wPx, hPx);
+
+        if (inter.crosswalks) {
+          inter.crosswalks.forEach(cw => {
+            const pt1 = worldToCanvas(cw.p1[0], cw.p1[1]);
+            const pt2 = worldToCanvas(cw.p2[0], cw.p2[1]);
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+            ctx.lineWidth = 3.6;
+            ctx.setLineDash([6, 4]);
+            ctx.beginPath();
+            ctx.moveTo(pt1.px, pt1.py);
+            ctx.lineTo(pt2.px, pt2.py);
+            ctx.stroke();
+            ctx.restore();
+          });
+        }
       }
     }
 
@@ -662,106 +1094,126 @@
   }
 
   // --------------------------------------------------------------------------
-  // 3. TOP-DOWN AUTONOMOUS VEHICLE MODEL (VECTOR CAR SILHOUETTE)
+  // 3. TOP-DOWN AUTONOMOUS VEHICLE MODEL (HIGH-FIDELITY RESEARCH AV)
   // --------------------------------------------------------------------------
   function drawTopDownEgoVehicle(ego) {
     const center = worldToCanvas(ego.x, ego.y);
     const vehW = 2.0 * scale;
-    const vehL = 4.6 * scale;
+    const vehL = 4.7 * scale;
     const yawRad = (ego.yaw * Math.PI) / 180.0;
+    const steerAngle = ego.steering || 0.0;
 
     ctx.save();
     ctx.translate(center.px, center.py);
-    ctx.rotate(-yawRad); // Inverted screen coordinate rotation
+    ctx.rotate(-yawRad); // Correct screen coordinate rotation (aligns local +X with vehicle forward heading)
 
-    // 1. Dual Volumetric Headlight Beams illuminating road
-    const beamDist = 38 * scale;
-    const beamW = 14 * scale;
+    // 1. Dual Projector Headlights & Volumetric Road Beams
+    const beamDist = 38.0 * scale;
+    const beamSpread = 12.0 * scale;
+    const hlX = vehL * 0.48;
+    const hlYLeft = -vehW * 0.35;
+    const hlYRight = vehW * 0.35;
 
-    // Left Headlight Cone
-    const gradL = ctx.createLinearGradient(vehL / 2, -vehW * 0.35, vehL / 2 + beamDist, -vehW * 0.35 - beamW);
-    gradL.addColorStop(0, 'rgba(0, 240, 255, 0.40)');
-    gradL.addColorStop(0.3, 'rgba(0, 240, 255, 0.15)');
-    gradL.addColorStop(1, 'rgba(0, 240, 255, 0.0)');
+    // Left Headlight Volumetric Cone
+    const gradL = ctx.createLinearGradient(hlX, hlYLeft, hlX + beamDist, hlYLeft - beamSpread);
+    gradL.addColorStop(0.0, 'rgba(0, 240, 255, 0.45)');
+    gradL.addColorStop(0.25, 'rgba(0, 240, 255, 0.20)');
+    gradL.addColorStop(0.7, 'rgba(0, 240, 255, 0.05)');
+    gradL.addColorStop(1.0, 'rgba(0, 240, 255, 0.0)');
 
     ctx.beginPath();
-    ctx.moveTo(vehL / 2, -vehW * 0.35);
-    ctx.lineTo(vehL / 2 + beamDist, -vehW * 0.35 - beamW);
-    ctx.lineTo(vehL / 2 + beamDist, -vehW * 0.35 + beamW * 0.3);
+    ctx.moveTo(hlX, hlYLeft);
+    ctx.lineTo(hlX + beamDist, hlYLeft - beamSpread);
+    ctx.lineTo(hlX + beamDist, hlYLeft + beamSpread * 0.35);
     ctx.closePath();
     ctx.fillStyle = gradL;
     ctx.fill();
 
-    // Right Headlight Cone
-    const gradR = ctx.createLinearGradient(vehL / 2, vehW * 0.35, vehL / 2 + beamDist, vehW * 0.35 + beamW);
-    gradR.addColorStop(0, 'rgba(0, 240, 255, 0.40)');
-    gradR.addColorStop(0.3, 'rgba(0, 240, 255, 0.15)');
-    gradR.addColorStop(1, 'rgba(0, 240, 255, 0.0)');
+    // Right Headlight Volumetric Cone
+    const gradR = ctx.createLinearGradient(hlX, hlYRight, hlX + beamDist, hlYRight + beamSpread);
+    gradR.addColorStop(0.0, 'rgba(0, 240, 255, 0.45)');
+    gradR.addColorStop(0.25, 'rgba(0, 240, 255, 0.20)');
+    gradR.addColorStop(0.7, 'rgba(0, 240, 255, 0.05)');
+    gradR.addColorStop(1.0, 'rgba(0, 240, 255, 0.0)');
 
     ctx.beginPath();
-    ctx.moveTo(vehL / 2, vehW * 0.35);
-    ctx.lineTo(vehL / 2 + beamDist, vehW * 0.35 - beamW * 0.3);
-    ctx.lineTo(vehL / 2 + beamDist, vehW * 0.35 + beamW);
+    ctx.moveTo(hlX, hlYRight);
+    ctx.lineTo(hlX + beamDist, hlYRight - beamSpread * 0.35);
+    ctx.lineTo(hlX + beamDist, hlYRight + beamSpread);
     ctx.closePath();
     ctx.fillStyle = gradR;
     ctx.fill();
 
-    // 2. Four Rubber Tires with Steered Front Wheels
-    const tireL = 0.85 * scale;
-    const tireW = 0.32 * scale;
-    const steerAngle = ego.steering || 0.0;
+    // 2. Four Treaded Tires with Steered Front Wheels
+    const tireL = 0.88 * scale;
+    const tireW = 0.34 * scale;
+
+    function drawTire(centerX, centerY, angleRad) {
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      if (angleRad) ctx.rotate(angleRad);
+
+      ctx.fillStyle = '#0a0e17';
+      ctx.fillRect(-tireL / 2, -tireW / 2, tireL, tireW);
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(-tireL / 2, -tireW / 2, tireL, tireW);
+
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1.0;
+      [-0.25, 0, 0.25].forEach(offsetRatio => {
+        ctx.beginPath();
+        ctx.moveTo(offsetRatio * tireL, -tireW / 2 + 1);
+        ctx.lineTo(offsetRatio * tireL, tireW / 2 - 1);
+        ctx.stroke();
+      });
+
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(-tireL * 0.18, -tireW * 0.18, tireL * 0.36, tireW * 0.36);
+
+      ctx.restore();
+    }
 
     // Rear Wheels (Fixed straight)
-    ctx.fillStyle = '#0f172a';
-    ctx.strokeStyle = '#334155';
-    ctx.lineWidth = 1;
+    drawTire(-vehL * 0.32, -vehW * 0.48, 0);
+    drawTire(-vehL * 0.32, vehW * 0.48, 0);
 
-    // Rear Left
-    ctx.fillRect(-vehL * 0.35 - tireL / 2, -vehW / 2 - tireW * 0.7, tireL, tireW);
-    ctx.strokeRect(-vehL * 0.35 - tireL / 2, -vehW / 2 - tireW * 0.7, tireL, tireW);
-    // Rear Right
-    ctx.fillRect(-vehL * 0.35 - tireL / 2, vehW / 2 - tireW * 0.3, tireL, tireW);
-    ctx.strokeRect(-vehL * 0.35 - tireL / 2, vehW / 2 - tireW * 0.3, tireL, tireW);
+    // Front Wheels (Steered by steerAngle)
+    drawTire(vehL * 0.30, -vehW * 0.48, -steerAngle);
+    drawTire(vehL * 0.30, vehW * 0.48, -steerAngle);
 
-    // Front Left (Rotated by steerAngle)
-    ctx.save();
-    ctx.translate(vehL * 0.30, -vehW / 2 - tireW * 0.2);
-    ctx.rotate(-steerAngle);
-    ctx.fillRect(-tireL / 2, -tireW / 2, tireL, tireW);
-    ctx.strokeRect(-tireL / 2, -tireW / 2, tireL, tireW);
-    ctx.restore();
-
-    // Front Right (Rotated by steerAngle)
-    ctx.save();
-    ctx.translate(vehL * 0.30, vehW / 2 + tireW * 0.2);
-    ctx.rotate(-steerAngle);
-    ctx.fillRect(-tireL / 2, -tireW / 2, tireL, tireW);
-    ctx.strokeRect(-tireL / 2, -tireW / 2, tireL, tireW);
-    ctx.restore();
-
-    // 3. Aerodynamic Car Body Silhouette (Smooth Vector Contours)
+    // 3. Aerodynamic Sculpted Vehicle Body
+    // Front Air Dam / Splitter Lip
     ctx.beginPath();
-    // Front bumper curve
+    ctx.moveTo(vehL * 0.50, -vehW * 0.30);
+    ctx.quadraticCurveTo(vehL * 0.53, 0, vehL * 0.50, vehW * 0.30);
+    ctx.lineTo(vehL * 0.48, vehW * 0.34);
+    ctx.quadraticCurveTo(vehL * 0.51, 0, vehL * 0.48, -vehW * 0.34);
+    ctx.closePath();
+    ctx.fillStyle = '#060a12';
+    ctx.fill();
+
+    // Sculpted Main Body Silhouette
+    ctx.beginPath();
     ctx.moveTo(vehL * 0.48, -vehW * 0.32);
     ctx.quadraticCurveTo(vehL * 0.52, 0, vehL * 0.48, vehW * 0.32);
-    // Right fender & door side contour
-    ctx.lineTo(vehL * 0.25, vehW * 0.48);
-    ctx.lineTo(-vehL * 0.25, vehW * 0.48);
-    // Rear right corner
-    ctx.quadraticCurveTo(-vehL * 0.48, vehW * 0.45, -vehL * 0.50, vehW * 0.28);
-    // Rear bumper
-    ctx.lineTo(-vehL * 0.50, -vehW * 0.28);
-    // Rear left corner
-    ctx.quadraticCurveTo(-vehL * 0.48, -vehW * 0.45, -vehL * 0.25, -vehW * 0.48);
-    // Left door side contour
-    ctx.lineTo(vehL * 0.25, -vehW * 0.48);
+    ctx.lineTo(vehL * 0.32, vehW * 0.48);
+    ctx.lineTo(vehL * 0.05, vehW * 0.45);
+    ctx.lineTo(-vehL * 0.08, vehW * 0.45);
+    ctx.lineTo(-vehL * 0.28, vehW * 0.49);
+    ctx.quadraticCurveTo(-vehL * 0.48, vehW * 0.46, -vehL * 0.50, vehW * 0.30);
+    ctx.lineTo(-vehL * 0.50, -vehW * 0.30);
+    ctx.quadraticCurveTo(-vehL * 0.48, -vehW * 0.46, -vehL * 0.28, -vehW * 0.49);
+    ctx.lineTo(-vehL * 0.08, -vehW * 0.45);
+    ctx.lineTo(vehL * 0.05, -vehW * 0.45);
+    ctx.lineTo(vehL * 0.32, -vehW * 0.48);
     ctx.closePath();
 
-    // Chassis Gradient Finish
     const bodyGrad = ctx.createLinearGradient(-vehL / 2, 0, vehL / 2, 0);
-    bodyGrad.addColorStop(0, '#0a0f1d');
-    bodyGrad.addColorStop(0.5, '#0f172a');
-    bodyGrad.addColorStop(1, '#1e293b');
+    bodyGrad.addColorStop(0.0, '#090e1a');
+    bodyGrad.addColorStop(0.4, '#111d30');
+    bodyGrad.addColorStop(0.8, '#1a2c47');
+    bodyGrad.addColorStop(1.0, '#223859');
     ctx.fillStyle = bodyGrad;
     ctx.fill();
 
@@ -769,87 +1221,155 @@
     ctx.strokeStyle = '#00f0ff';
     ctx.lineWidth = 1.8;
     ctx.shadowColor = '#00f0ff';
-    ctx.shadowBlur = 9;
+    ctx.shadowBlur = 8;
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // 4. Cabin Glasshouse (Windshield, Panoramic Roof, Rear Window)
-    // Front Windshield
+    // Sculpted Hood Power-Dome Crease Lines
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.40)';
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.moveTo(vehL * 0.18, -vehW * 0.36);
-    ctx.quadraticCurveTo(vehL * 0.24, 0, vehL * 0.18, vehW * 0.36);
-    ctx.lineTo(vehL * 0.02, vehW * 0.34);
-    ctx.lineTo(vehL * 0.02, -vehW * 0.34);
+    ctx.moveTo(vehL * 0.45, -vehW * 0.16);
+    ctx.lineTo(vehL * 0.20, -vehW * 0.24);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(vehL * 0.45, vehW * 0.16);
+    ctx.lineTo(vehL * 0.20, vehW * 0.24);
+    ctx.stroke();
+
+    // Rear Aero Diffuser Fins
+    ctx.fillStyle = '#060a12';
+    ctx.fillRect(-vehL * 0.51, -vehW * 0.20, vehL * 0.03, vehW * 0.06);
+    ctx.fillRect(-vehL * 0.51, -vehW * 0.03, vehL * 0.03, vehW * 0.06);
+    ctx.fillRect(-vehL * 0.51, vehW * 0.14, vehL * 0.03, vehW * 0.06);
+
+    // 4. Aerodynamic Side Mirrors with Amber LED Turn Indicators
+    function drawMirror(mirrorY, isLeft) {
+      const mX = vehL * 0.14;
+      const mLen = vehL * 0.07;
+      const mWidth = vehW * 0.12;
+
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 2.0;
+      ctx.beginPath();
+      ctx.moveTo(mX, mirrorY * 0.85);
+      ctx.lineTo(mX - vehL * 0.02, mirrorY);
+      ctx.stroke();
+
+      ctx.fillStyle = '#152238';
+      ctx.strokeStyle = '#00f0ff';
+      ctx.lineWidth = 1.0;
+      ctx.fillRect(mX - mLen / 2, isLeft ? mirrorY - mWidth : mirrorY, mLen, mWidth);
+      ctx.strokeRect(mX - mLen / 2, isLeft ? mirrorY - mWidth : mirrorY, mLen, mWidth);
+
+      const isSignaling = (isLeft && steerAngle > 0.04) || (!isLeft && steerAngle < -0.04);
+      const amberPulse = isSignaling ? (Math.sin(performance.now() * 0.012) > 0 ? '#f59e0b' : '#78350f') : '#d97706';
+      ctx.fillStyle = amberPulse;
+      if (isSignaling) {
+        ctx.shadowColor = '#f59e0b';
+        ctx.shadowBlur = 6;
+      }
+      ctx.fillRect(mX + mLen * 0.2, isLeft ? mirrorY - mWidth + 1 : mirrorY + 1, mLen * 0.25, mWidth - 2);
+      ctx.shadowBlur = 0;
+    }
+
+    drawMirror(-vehW * 0.52, true);  // Left Mirror
+    drawMirror(vehW * 0.52, false);  // Right Mirror
+
+    // 5. Cabin Glasshouse (Windshield, Panoramic Roof, Rear Window)
+    ctx.beginPath();
+    ctx.moveTo(vehL * 0.20, -vehW * 0.36);
+    ctx.quadraticCurveTo(vehL * 0.25, 0, vehL * 0.20, vehW * 0.36);
+    ctx.lineTo(vehL * 0.04, vehW * 0.34);
+    ctx.lineTo(vehL * 0.04, -vehW * 0.34);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(0, 240, 255, 0.30)';
+
+    const glassGrad = ctx.createLinearGradient(vehL * 0.04, 0, vehL * 0.25, 0);
+    glassGrad.addColorStop(0.0, 'rgba(6, 182, 212, 0.25)');
+    glassGrad.addColorStop(1.0, 'rgba(0, 240, 255, 0.45)');
+    ctx.fillStyle = glassGrad;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(0, 240, 255, 0.6)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // Cabin Panoramic Roof Panel
-    ctx.fillStyle = '#060913';
-    ctx.fillRect(-vehL * 0.22, -vehW * 0.32, vehL * 0.24, vehW * 0.64);
-
-    // Rear Window
-    ctx.beginPath();
-    ctx.moveTo(-vehL * 0.22, -vehW * 0.32);
-    ctx.lineTo(-vehL * 0.36, -vehW * 0.28);
-    ctx.quadraticCurveTo(-vehL * 0.40, 0, -vehL * 0.36, vehW * 0.28);
-    ctx.lineTo(-vehL * 0.22, vehW * 0.32);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(0, 240, 255, 0.22)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(0, 240, 255, 0.4)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // 5. LED Lighting Details
-    // Front Headlights (Cyan LEDs)
-    ctx.fillStyle = '#38bdf8';
-    ctx.fillRect(vehL * 0.45, -vehW * 0.42, vehL * 0.05, vehW * 0.18);
-    ctx.fillRect(vehL * 0.45, vehW * 0.24, vehL * 0.05, vehW * 0.18);
-
-    // Rear Taillights (Red LEDs)
-    ctx.fillStyle = '#ef4444';
-    ctx.fillRect(-vehL * 0.50, -vehW * 0.40, vehL * 0.04, vehW * 0.16);
-    ctx.fillRect(-vehL * 0.50, vehW * 0.24, vehL * 0.04, vehW * 0.16);
-
-    // 6. Roof Autonomous Sensor Pod (Velodyne HDL-64E LiDAR Puck)
-    // Sensor Bar on Roof
-    ctx.fillStyle = '#334155';
-    ctx.fillRect(-vehL * 0.12, -vehW * 0.25, vehL * 0.20, vehW * 0.50);
-
-    // LiDAR Puck Cylinder
-    ctx.beginPath();
-    ctx.arc(0, 0, 4.2, 0, 2 * Math.PI);
-    ctx.fillStyle = '#0f172a';
-    ctx.fill();
-    ctx.strokeStyle = '#ef4444';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-
-    // Glowing Central Laser Emitter
-    ctx.beginPath();
-    ctx.arc(0, 0, 2.0, 0, 2 * Math.PI);
-    ctx.fillStyle = '#ef4444';
-    ctx.shadowColor = '#ef4444';
-    ctx.shadowBlur = 6;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    // Spinning Laser Sweep Line
-    const sweepAngle = (performance.now() * 0.007) % (2 * Math.PI);
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(Math.cos(sweepAngle) * 7.5 * scale, Math.sin(sweepAngle) * 7.5 * scale);
-    ctx.strokeStyle = 'rgba(239, 68, 68, 0.40)';
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.70)';
     ctx.lineWidth = 1.2;
     ctx.stroke();
 
-    // Research Callout: [ LiDAR ] matching reference image
+    // Panoramic Glass Roof Panel
+    ctx.fillStyle = '#050912';
+    ctx.fillRect(-vehL * 0.22, -vehW * 0.33, vehL * 0.26, vehW * 0.66);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.lineWidth = 1.0;
+    ctx.strokeRect(-vehL * 0.22, -vehW * 0.33, vehL * 0.26, vehW * 0.66);
+
+    // Rear Window
+    ctx.beginPath();
+    ctx.moveTo(-vehL * 0.22, -vehW * 0.33);
+    ctx.lineTo(-vehL * 0.38, -vehW * 0.28);
+    ctx.quadraticCurveTo(-vehL * 0.42, 0, -vehL * 0.38, vehW * 0.28);
+    ctx.lineTo(-vehL * 0.22, vehW * 0.33);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(0, 240, 255, 0.22)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.45)';
+    ctx.lineWidth = 1.0;
+    ctx.stroke();
+
+    // 6. Full-Width Modern Rear LED Taillight Bar
+    const barX = -vehL * 0.50;
+    const barYStart = -vehW * 0.38;
+    const barYEnd = vehW * 0.38;
+
     ctx.save();
-    ctx.rotate(yawRad); // Keep text upright on screen
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 3.2;
+    ctx.shadowColor = '#ef4444';
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.moveTo(barX, barYStart);
+    ctx.lineTo(barX, barYEnd);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#fecaca';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(barX, barYStart + 2);
+    ctx.lineTo(barX, barYEnd - 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // 7. Roof Autonomous Sensor Pod (Velodyne HDL-64E LiDAR Puck)
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(-vehL * 0.08, -vehW * 0.22, vehL * 0.16, vehW * 0.44);
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-vehL * 0.08, -vehW * 0.22, vehL * 0.16, vehW * 0.44);
+
+    ctx.beginPath();
+    ctx.arc(0, 0, 4.8, 0, 2 * Math.PI);
+    ctx.fillStyle = '#090d16';
+    ctx.fill();
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(0, 0, 2.2, 0, 2 * Math.PI);
+    ctx.fillStyle = '#ef4444';
+    ctx.shadowColor = '#ef4444';
+    ctx.shadowBlur = 8;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    const sweepAngle = (performance.now() * 0.007) % (2 * Math.PI);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(sweepAngle) * 8.5 * scale, Math.sin(sweepAngle) * 8.5 * scale);
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+
+    // Upright LiDAR Callout Bracket
+    ctx.save();
+    ctx.rotate(yawRad); // Counter-rotate so callout text stays upright on screen
     ctx.strokeStyle = 'rgba(248, 250, 252, 0.85)';
     ctx.lineWidth = 1.2;
     ctx.beginPath();
@@ -2001,11 +2521,39 @@
       }
     });
 
+    // Quick Junction Decision Buttons (Straight, Left, Right)
+    const junctionButtons = document.querySelectorAll('.junc-btn');
+    junctionButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        junctionButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const turnKey = btn.getAttribute('data-turn');
+        activeRouteMode = turnKey;
+        if (routePresetSelect) {
+          routePresetSelect.value = turnKey;
+        }
+        if (window.osmRouter) {
+          window.osmRouter.loadPresetByKey(turnKey);
+        }
+        render();
+      });
+    });
+
     // Dynamic Road Network Preset Dropdown
     if (routePresetSelect) {
       routePresetSelect.addEventListener('change', (e) => {
         const val = e.target.value;
         activeRouteMode = val;
+
+        // Synchronize junction decision buttons if applicable
+        junctionButtons.forEach(b => {
+          if (b.getAttribute('data-turn') === val) {
+            b.classList.add('active');
+          } else {
+            b.classList.remove('active');
+          }
+        });
+
         if (val === 'live_gps') {
           triggerGpsAcquisition();
         } else if (val === 'benchmark') {
