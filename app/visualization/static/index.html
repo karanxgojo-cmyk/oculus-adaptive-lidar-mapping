@@ -172,9 +172,9 @@
         <!-- Live Status Indicators Grid -->
         <div class="live-status-chips-grid">
           <span class="status-pill status-pill-green" id="pill-osm">● OSM CONNECTED</span>
-          <span class="status-pill status-pill-cyan" id="pill-gps">● DEVICE GEOLOCATION</span>
-          <span class="status-pill status-pill-blue" id="pill-match">● MAP MATCH: ACTIVE</span>
-          <span class="status-pill status-pill-amber" id="pill-route">● DYNAMIC ROUTE</span>
+          <span class="status-pill status-pill-cyan" id="pill-gps">● DEMO ANCHOR (SAN FRANCISCO)</span>
+          <span class="status-pill status-pill-blue" id="pill-match">● SIMULATED ON LIVE ROAD</span>
+          <span class="status-pill status-pill-amber" id="pill-route">● DYNAMIC ROAD GRAPH</span>
         </div>
 
         <!-- Device Geolocation & GNSS Accuracy Readout -->
@@ -183,10 +183,10 @@
             <span class="geo-label">DEVICE POSITION (WGS84)</span>
             <span class="geo-accuracy-badge" id="geo-accuracy-val">ACCURACY: ±8 m</span>
           </div>
-          <div class="geo-coords-val" id="geo-coords-val">Acquiring live position...</div>
+          <div class="geo-coords-val" id="geo-coords-val">37.7891° N, 122.4014° W</div>
           <div class="geo-sub-row">
-            <span id="geo-altitude-val">ALT: -- m</span>
-            <span id="geo-speed-val">SPEED: 0.0 km/h</span>
+            <span id="geo-altitude-val">ALT: 12 m</span>
+            <span id="geo-speed-val">DEV SPEED: 0.0 km/h</span>
             <span id="geo-timestamp-val">TIMESTAMP: --</span>
           </div>
         </div>
@@ -245,8 +245,9 @@
         <!-- Honesty Disclaimer & Attribution -->
         <div class="route-honesty-note">
           <div class="honesty-badge-row">
-            <span class="honesty-tag tag-geo">LOCATION: DEVICE GEOLOCATION</span>
-            <span class="honesty-tag">ROAD DATA: LIVE OSM</span>
+            <span class="honesty-tag tag-geo">LOCATION: LIVE DEVICE GEOLOCATION</span>
+            <span class="honesty-tag">ROAD NETWORK: LIVE OSM</span>
+            <span class="honesty-tag tag-amber">EGO MOTION: SIMULATED ON LIVE ROAD</span>
             <span class="honesty-tag tag-research">LIDAR: RESEARCH SIMULATION</span>
           </div>
           <div class="osm-attribution-line">

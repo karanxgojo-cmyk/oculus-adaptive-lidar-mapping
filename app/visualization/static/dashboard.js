@@ -1493,7 +1493,7 @@
         }
 
         // Dynamic Forward Path Relevance Booster (along active OSM route)
-        if (!isRefined && window.osmRouter && activeRouteMode !== 'benchmark') {
+        if (!isRefined && window.osmRouter) {
           const pathInfo = window.osmRouter.getDistanceToPath(cellWx, cellWy, ego, 40.0);
           if (pathInfo.inForwardCorridor && ring.r1 <= 30.0) {
             isRefined = true;
@@ -2412,7 +2412,7 @@
     reductionBar.style.width = `${m.cell_reduction_percent}%`;
     metricStorageKb.textContent = `${m.estimated_adaptive_storage_kb.toFixed(0)} KB vs ${m.estimated_uniform_storage_kb.toFixed(0)} KB`;
 
-    if (activeRouteMode !== 'benchmark' && window.osmRouter) {
+    if (window.osmRouter) {
       const tel = window.osmRouter.telemetry;
       phaseTitle.textContent = tel.roadName || 'OSM Roadway';
       phaseDesc.textContent = `${tel.maneuverText} (${tel.maneuverDistM}m)`;
@@ -2539,11 +2539,6 @@
       }
     });
 
-    // Live Location & OpenStreetMap Autonomous Tracking Initiation
-    if (window.osmRouter) {
-      window.osmRouter.startLiveTracking();
-    }
-
     // Live Navigation & Road Network Telemetry Listener
     if (window.osmRouter) {
       window.osmRouter.onUpdate((tel) => {
@@ -2578,8 +2573,19 @@
           pillOsm.className = tel.isLiveNetwork ? 'status-pill status-pill-green' : 'status-pill status-pill-cyan';
         }
         if (pillGps) {
-          pillGps.textContent = tel.statusBadge || '● DEVICE GEOLOCATION';
+          pillGps.textContent = tel.locationBadge || '● DEVICE GEOLOCATION';
         }
+        if (pillMatch) {
+          pillMatch.textContent = '● SIMULATED ON LIVE ROAD';
+        }
+        if (pillRoute) {
+          pillRoute.textContent = '● DYNAMIC ROAD GRAPH';
+        }
+      });
+
+      // Kick off live location tracking after listener is established
+      window.osmRouter.startLiveTracking();
+    }
 
         // Update destination status tip
         if (destStatusText) {
