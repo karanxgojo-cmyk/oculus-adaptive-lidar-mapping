@@ -190,7 +190,8 @@
 
   const SEM_COLORS = {
     0: '#64748b', 1: '#10b981', 2: '#475569', 3: '#f59e0b',
-    4: '#3b82f6', 5: '#ef4444', 6: '#a855f7', 7: '#0ea5e9'
+    4: '#3b82f6', 5: '#ef4444', 6: '#a855f7', 7: '#0ea5e9',
+    8: '#eab308'
   };
 
   // RADIAL / FOVEATED ADAPTIVE GRID FIELD ZONES (AUTONOMOUS RESEARCH PRESENTATION)
@@ -294,7 +295,9 @@
     ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
     render();
   }
-  window.addEventListener('resize', resizeCanvas);
+  if (typeof window !== 'undefined' && window.addEventListener) {
+    window.addEventListener('resize', resizeCanvas);
+  }
 
   // Coordinate Conversion: Fixed World (X_w, Y_w) -> Canvas (px, py)
   function worldToCanvas(x, y) {
@@ -1475,6 +1478,965 @@
   }
 
   // --------------------------------------------------------------------------
+  // 3b. ENCOUNTER MANAGER — REAL-TIME SCENE DIVERSITY & LIFECYCLE ENGINE
+  // Maintains a rich, continuous population of diverse dynamic objects:
+  // - Oncoming, lead, parked, and cross vehicles
+  // - Crossing, walking, and waiting pedestrians
+  // - Animals (canines/dogs) with quadruped silhouette and amber bounding box
+  // - Static road obstacles (traffic cones, safety barriers)
+  // Evaluates along the active route spline with Frenet (s, d) road coordinates.
+  // --------------------------------------------------------------------------
+  class EncounterManager {
+    constructor() {
+      this.entities = [];
+      this.nextId = 1;
+      this.initialized = false;
+    }
+
+    // Pre-generate relative 3D surface point offsets for synthetic LiDAR returns
+    static generateLocalPoints(type, subType, length, width, height) {
+      const pts = [];
+      if (type === 'vehicle') {
+        const halfL = length / 2;
+        const halfW = width / 2;
+        for (let x = -halfL + 0.35; x <= halfL - 0.35; x += 0.75) {
+          for (let y = -halfW + 0.35; y <= halfW - 0.35; y += 0.55) {
+            let z = 0.85;
+            if (x > -halfL * 0.4 && x < halfL * 0.4) z = height * 0.95;
+            else if (x >= halfL * 0.4) z = 0.82;
+            else z = 0.92;
+            pts.push([x + (Math.random() - 0.5) * 0.1, y + (Math.random() - 0.5) * 0.1, z]);
+          }
+        }
+        pts.push([-halfL * 0.65, -halfW, 0.35], [-halfL * 0.65, halfW, 0.35]);
+        pts.push([halfL * 0.65, -halfW, 0.35], [halfL * 0.65, halfW, 0.35]);
+      } else if (type === 'pedestrian') {
+        pts.push([0, 0, 0.15], [-0.15, 0, 0.55], [0.15, 0, 0.55]);
+        pts.push([-0.18, 0, 1.05], [0.18, 0, 1.05], [0, 0, 1.25]);
+        pts.push([-0.22, 0, 1.45], [0.22, 0, 1.45], [0, 0, 1.55]);
+        pts.push([0, 0, height * 0.96]);
+      } else if (type === 'animal') {
+        const halfL = length / 2;
+        pts.push([-halfL * 0.7, -0.12, 0.08], [-halfL * 0.7, 0.12, 0.08]);
+        pts.push([halfL * 0.6, -0.12, 0.08], [halfL * 0.6, 0.12, 0.08]);
+        pts.push([-halfL * 0.3, 0, height * 0.7], [0, 0, height * 0.75], [halfL * 0.3, 0, height * 0.8]);
+        pts.push([halfL * 0.75, 0, height * 0.9], [halfL * 0.95, 0, height * 0.75]);
+      } else if (subType === 'traffic_cone') {
+        pts.push([0, 0, 0.05], [-0.12, -0.12, 0.15], [0.12, 0.12, 0.15]);
+        pts.push([0, 0, height * 0.5], [0, 0, height * 0.95]);
+      } else {
+        for (let x = -length / 2; x <= length / 2; x += 0.45) {
+          pts.push([x, 0, 0.25], [x, 0, height * 0.85]);
+        }
+      }
+      return pts;
+    }
+
+    // Map Frenet road coordinates (s: distance along route, d: lateral offset) to World (x, y, yaw)
+    getFrenetWorld(s, d, isOpposite = false, ego = null, router = null) {
+      if (router && router.spline) {
+        const pt = router.spline.evalPointAtDistance(s);
+        if (pt) {
+          const rawTx = (pt.tangent && pt.tangent.x !== undefined) ? pt.tangent.x : (pt.dx !== undefined ? pt.dx : 1);
+          const rawTy = (pt.tangent && pt.tangent.y !== undefined) ? pt.tangent.y : (pt.dy !== undefined ? pt.dy : 0);
+          const tLen = Math.hypot(rawTx, rawTy) || 1.0;
+          const tx = rawTx / tLen;
+          const ty = rawTy / tLen;
+          const nx = -ty;
+          const ny = tx;
+          const wx = pt.x + d * nx;
+          const wy = pt.y + d * ny;
+          let yaw = Math.atan2(ty, tx);
+          if (isOpposite) yaw += Math.PI;
+          return { x: wx, y: wy, z: pt.z || 0.0, yaw, tx, ty, nx, ny };
+        }
+      }
+      const e = ego || getEgoPose(simTime);
+      const yawRad = (e.yaw * Math.PI) / 180.0;
+      const fx = Math.cos(yawRad);
+      const fy = Math.sin(yawRad);
+      const nx = -fy;
+      const ny = fx;
+      const sBase = router ? router.distanceTraveled : simTime * 9.5;
+      const ds = s - sBase;
+      const wx = e.x + ds * fx + d * nx;
+      const wy = e.y + ds * fy + d * ny;
+      let yaw = yawRad;
+      if (isOpposite) yaw += Math.PI;
+      return { x: wx, y: wy, z: e.z || 0.0, yaw, tx: fx, ty: fy, nx, ny };
+    }
+
+    createEntity(config) {
+      const id = this.nextId++;
+      const localPts = EncounterManager.generateLocalPoints(
+        config.type,
+        config.subType,
+        config.length,
+        config.width,
+        config.height
+      );
+
+      return {
+        id,
+        name: config.name,
+        type: config.type,
+        subType: config.subType,
+        s: config.s,
+        d: config.d,
+        speed: config.speed,
+        vLat: config.vLat || 0.0,
+        x: config.x || 0.0,
+        y: config.y || 0.0,
+        z: config.z || 0.0,
+        vx: 0.0,
+        vy: 0.0,
+        yaw: config.yaw || 0.0,
+        length: config.length,
+        width: config.width,
+        height: config.height,
+        semantic_class: config.semantic_class,
+        confidence: config.confidence || 0.94,
+        complexity: config.complexity || 'Medium',
+        base_elev: config.base_elev !== undefined ? config.base_elev : 0.0,
+        top_elev: config.top_elev !== undefined ? config.top_elev : config.height,
+        e_var: config.e_var || 0.028,
+        slope_deg: config.slope_deg || 0.3,
+        danger_level: config.danger_level || 'SAFE',
+        danger_prob: config.danger_prob || 0.1,
+        is_dynamic: config.is_dynamic !== undefined ? config.is_dynamic : true,
+        isOpposite: !!config.isOpposite,
+        localPoints: localPts,
+        inCorridor: false,
+        phaseOffset: Math.random() * Math.PI * 2,
+        distance: 99.0
+      };
+    }
+
+    seedInitialEncounters(ego, router) {
+      this.entities = [];
+      const sEgo = router ? router.distanceTraveled : 0.0;
+
+      // 1. Lead Electric Sedan (Cruising ahead in ego corridor)
+      this.entities.push(this.createEntity({
+        name: 'Lead Vehicle (Sedan)',
+        type: 'vehicle',
+        subType: 'lead_car',
+        s: sEgo + 32.0,
+        d: 0.15,
+        speed: 7.8,
+        length: 4.7,
+        width: 2.0,
+        height: 1.48,
+        semantic_class: 4,
+        confidence: 0.96,
+        complexity: 'Medium (Multi-box Vehicle)',
+        danger_level: 'CAUTION',
+        danger_prob: 0.42,
+        isOpposite: false
+      }));
+
+      // 2. Oncoming Autonomous Sedan (Approaching in opposite lane)
+      this.entities.push(this.createEntity({
+        name: 'Oncoming Vehicle (Sedan)',
+        type: 'vehicle',
+        subType: 'oncoming_car',
+        s: sEgo + 72.0,
+        d: -3.8,
+        speed: 10.5,
+        length: 4.8,
+        width: 2.0,
+        height: 1.52,
+        semantic_class: 4,
+        confidence: 0.95,
+        complexity: 'High (Approaching Dynamics)',
+        danger_level: 'WARNING',
+        danger_prob: 0.68,
+        isOpposite: true
+      }));
+
+      // 3. Parked Delivery Van (Stationary on right curb/shoulder)
+      this.entities.push(this.createEntity({
+        name: 'Parked Delivery Van',
+        type: 'vehicle',
+        subType: 'parked_car',
+        s: sEgo + 22.0,
+        d: 4.9,
+        speed: 0.0,
+        length: 5.4,
+        width: 2.2,
+        height: 2.1,
+        semantic_class: 4,
+        confidence: 0.97,
+        complexity: 'Medium (Stationary Box)',
+        danger_level: 'SAFE',
+        danger_prob: 0.09,
+        is_dynamic: false,
+        isOpposite: false
+      }));
+
+      // 4. Crossing Pedestrian (Actively traversing crosswalk from left to right)
+      this.entities.push(this.createEntity({
+        name: 'Pedestrian (Crossing)',
+        type: 'pedestrian',
+        subType: 'pedestrian_crossing',
+        s: sEgo + 26.0,
+        d: -3.2,
+        speed: 0.0,
+        vLat: 1.35,
+        length: 0.65,
+        width: 0.55,
+        height: 1.76,
+        semantic_class: 5,
+        confidence: 0.94,
+        complexity: 'High (Articulated VRU)',
+        danger_level: 'DANGER',
+        danger_prob: 0.91,
+        isOpposite: false
+      }));
+
+      // 5. Sidewalk Walker (Walking along right sidewalk)
+      this.entities.push(this.createEntity({
+        name: 'Pedestrian (Sidewalk)',
+        type: 'pedestrian',
+        subType: 'sidewalk_walker',
+        s: sEgo + 16.0,
+        d: 6.2,
+        speed: 1.2,
+        vLat: 0.0,
+        length: 0.6,
+        width: 0.5,
+        height: 1.72,
+        semantic_class: 5,
+        confidence: 0.93,
+        complexity: 'Low (VRU)',
+        danger_level: 'SAFE',
+        danger_prob: 0.06,
+        isOpposite: false
+      }));
+
+      // 6. Animal: Canine / Dog (Trotting near road edge / curb)
+      this.entities.push(this.createEntity({
+        name: 'Animal (Canine / Dog)',
+        type: 'animal',
+        subType: 'dog_crosser',
+        s: sEgo + 40.0,
+        d: -4.8,
+        speed: 2.1,
+        vLat: 0.6,
+        length: 0.85,
+        width: 0.35,
+        height: 0.56,
+        semantic_class: 8,
+        confidence: 0.91,
+        complexity: 'Medium (Quadruped Silhouette)',
+        danger_level: 'CAUTION',
+        danger_prob: 0.52,
+        isOpposite: false
+      }));
+
+      // 7. Construction Cone Cluster (Traffic cones along right shoulder)
+      [-1.2, 0.0, 1.2].forEach((offsetS, idx) => {
+        this.entities.push(this.createEntity({
+          name: `Traffic Cone #${idx + 1}`,
+          type: 'obstacle',
+          subType: 'traffic_cone',
+          s: sEgo + 48.0 + offsetS * 3.5,
+          d: 3.4 + idx * 0.25,
+          speed: 0.0,
+          length: 0.38,
+          width: 0.38,
+          height: 0.75,
+          semantic_class: 3,
+          confidence: 0.98,
+          complexity: 'Low (Rigid Cone)',
+          danger_level: 'SAFE',
+          danger_prob: 0.12,
+          is_dynamic: false,
+          isOpposite: false
+        }));
+      });
+
+      // 8. Distant Oncoming SUV (Approaching 105m ahead)
+      this.entities.push(this.createEntity({
+        name: 'Oncoming Vehicle (SUV)',
+        type: 'vehicle',
+        subType: 'oncoming_car',
+        s: sEgo + 105.0,
+        d: -3.8,
+        speed: 11.2,
+        length: 5.0,
+        width: 2.1,
+        height: 1.72,
+        semantic_class: 4,
+        confidence: 0.93,
+        complexity: 'Medium (SUV)',
+        danger_level: 'SAFE',
+        danger_prob: 0.15,
+        isOpposite: true
+      }));
+
+      this.initialized = true;
+      this.updateWorldCoords(ego, router);
+    }
+
+    update(dt, ego, router) {
+      if (!this.initialized) {
+        this.seedInitialEncounters(ego, router);
+        return;
+      }
+
+      const sEgo = router ? router.distanceTraveled : (simTime * 9.5);
+
+      // 1. Kinematic state updates for each entity
+      for (let i = 0; i < this.entities.length; i++) {
+        const ent = this.entities[i];
+        if (!ent.is_dynamic && ent.speed === 0 && ent.vLat === 0) continue;
+
+        if (ent.subType === 'oncoming_car') {
+          ent.s -= ent.speed * dt;
+        } else if (ent.subType === 'lead_car') {
+          ent.s += ent.speed * dt;
+        } else if (ent.subType === 'pedestrian_crossing') {
+          ent.d += ent.vLat * dt;
+          if (ent.d > 6.8) {
+            ent.vLat = -Math.abs(ent.vLat);
+          } else if (ent.d < -6.8) {
+            ent.vLat = Math.abs(ent.vLat);
+          }
+          ent.s += (ent.speed || 0.3) * dt;
+        } else if (ent.subType === 'sidewalk_walker') {
+          ent.s += ent.speed * dt;
+        } else if (ent.subType === 'dog_crosser') {
+          ent.s += ent.speed * dt;
+          ent.d += ent.vLat * dt;
+          if (ent.d > 2.2 || ent.d < -5.5) {
+            ent.vLat = -ent.vLat;
+          }
+        }
+      }
+
+      // 2. Compute World Coordinates, Velocities, and Danger Levels
+      this.updateWorldCoords(ego, router);
+
+      // 3. Despawn out-of-range entities (> 65m behind ego or > 125m away)
+      this.entities = this.entities.filter(ent => {
+        const distFromEgo = Math.hypot(ent.x - ego.x, ent.y - ego.y);
+        const behindDist = sEgo - ent.s;
+        return behindDist <= 65.0 && distFromEgo <= 125.0;
+      });
+
+      // 4. Replenish entities dynamically to sustain target density
+      this.replenishEncounters(sEgo, ego, router);
+    }
+
+    updateWorldCoords(ego, router) {
+      const sEgo = router ? router.distanceTraveled : (simTime * 9.5);
+
+      for (let i = 0; i < this.entities.length; i++) {
+        const ent = this.entities[i];
+        const oldX = ent.x;
+        const oldY = ent.y;
+
+        const w = this.getFrenetWorld(ent.s, ent.d, ent.isOpposite, ego, router);
+        ent.x = w.x;
+        ent.y = w.y;
+        ent.z = w.z;
+        ent.yaw = w.yaw;
+
+        if (ent.is_dynamic && oldX !== 0) {
+          const vx = (w.x - oldX) / 0.033;
+          const vy = (w.y - oldY) / 0.033;
+          ent.vx = ent.vx * 0.7 + vx * 0.3;
+          ent.vy = ent.vy * 0.7 + vy * 0.3;
+        }
+
+        const distEgo = Math.hypot(ent.x - ego.x, ent.y - ego.y);
+        ent.distance = distEgo;
+
+        const deltaS = ent.s - sEgo;
+        const absD = Math.abs(ent.d);
+
+        // Active lane corridor check
+        const inCorridor = (absD <= 2.2 && deltaS > 1.0 && deltaS <= 45.0);
+        ent.inCorridor = inCorridor;
+
+        if (ent.type === 'pedestrian' && inCorridor) {
+          ent.danger_level = 'DANGER';
+          ent.danger_prob = Math.min(0.96, 0.84 + (40.0 - Math.min(40.0, deltaS)) * 0.003);
+        } else if (ent.type === 'animal' && inCorridor) {
+          ent.danger_level = 'DANGER';
+          ent.danger_prob = 0.88;
+        } else if (ent.subType === 'oncoming_car' && deltaS > 0 && deltaS < 40.0) {
+          ent.danger_level = 'WARNING';
+          ent.danger_prob = 0.74;
+        } else if (ent.type === 'pedestrian' && absD <= 4.2 && deltaS > 0 && deltaS < 35.0) {
+          ent.danger_level = 'CAUTION';
+          ent.danger_prob = 0.58;
+        } else if (ent.type === 'animal' && absD <= 3.8 && deltaS > 0 && deltaS < 35.0) {
+          ent.danger_level = 'CAUTION';
+          ent.danger_prob = 0.52;
+        } else if (ent.subType === 'lead_car' && deltaS < 25.0) {
+          ent.danger_level = 'CAUTION';
+          ent.danger_prob = 0.45;
+        } else if (distEgo < 15.0 && ent.type === 'obstacle') {
+          ent.danger_level = 'WARNING';
+          ent.danger_prob = 0.62;
+        } else {
+          ent.danger_level = 'SAFE';
+          ent.danger_prob = Math.max(0.04, 0.20 - distEgo * 0.002);
+        }
+      }
+    }
+
+    replenishEncounters(sEgo, ego, router) {
+      const activeVehicles = this.entities.filter(e => e.type === 'vehicle' && e.distance <= 90.0);
+      const activePeds = this.entities.filter(e => e.type === 'pedestrian' && e.distance <= 85.0);
+      const activeAnimals = this.entities.filter(e => e.type === 'animal' && e.distance <= 85.0);
+      const activeObstacles = this.entities.filter(e => e.type === 'obstacle' && e.distance <= 90.0);
+
+      // Vehicles: maintain at least 3
+      if (activeVehicles.length < 3) {
+        const rand = Math.random();
+        const spawnS = sEgo + 65.0 + Math.random() * 30.0;
+        if (rand < 0.55) {
+          this.entities.push(this.createEntity({
+            name: Math.random() > 0.4 ? 'Oncoming Vehicle (Sedan)' : 'Oncoming Vehicle (SUV)',
+            type: 'vehicle',
+            subType: 'oncoming_car',
+            s: spawnS,
+            d: -3.8,
+            speed: 9.5 + Math.random() * 2.5,
+            length: 4.7 + Math.random() * 0.4,
+            width: 2.0,
+            height: 1.52,
+            semantic_class: 4,
+            confidence: 0.94 + Math.random() * 0.04,
+            complexity: 'High (Approaching Dynamics)',
+            danger_level: 'WARNING',
+            danger_prob: 0.70,
+            isOpposite: true
+          }));
+        } else if (rand < 0.85) {
+          this.entities.push(this.createEntity({
+            name: 'Lead Vehicle (Sedan)',
+            type: 'vehicle',
+            subType: 'lead_car',
+            s: spawnS - 25.0,
+            d: Math.random() > 0.5 ? 0.2 : 3.6,
+            speed: 7.2 + Math.random() * 1.5,
+            length: 4.6,
+            width: 1.95,
+            height: 1.48,
+            semantic_class: 4,
+            confidence: 0.95,
+            complexity: 'Medium (Multi-box Vehicle)',
+            danger_level: 'CAUTION',
+            danger_prob: 0.38,
+            isOpposite: false
+          }));
+        } else {
+          this.entities.push(this.createEntity({
+            name: 'Parked Vehicle (Coupe)',
+            type: 'vehicle',
+            subType: 'parked_car',
+            s: spawnS,
+            d: Math.random() > 0.5 ? 4.9 : -4.9,
+            speed: 0.0,
+            length: 4.5,
+            width: 1.9,
+            height: 1.42,
+            semantic_class: 4,
+            confidence: 0.97,
+            complexity: 'Low (Stationary)',
+            danger_level: 'SAFE',
+            danger_prob: 0.08,
+            is_dynamic: false,
+            isOpposite: false
+          }));
+        }
+      }
+
+      // Pedestrians: maintain at least 2
+      if (activePeds.length < 2) {
+        const spawnS = sEgo + 45.0 + Math.random() * 30.0;
+        if (Math.random() < 0.65) {
+          const fromLeft = Math.random() > 0.5;
+          this.entities.push(this.createEntity({
+            name: 'Pedestrian (Crossing)',
+            type: 'pedestrian',
+            subType: 'pedestrian_crossing',
+            s: spawnS,
+            d: fromLeft ? -6.2 : 6.2,
+            speed: 0.0,
+            vLat: fromLeft ? (1.2 + Math.random() * 0.3) : -(1.2 + Math.random() * 0.3),
+            length: 0.62,
+            width: 0.52,
+            height: 1.74,
+            semantic_class: 5,
+            confidence: 0.95,
+            complexity: 'High (Articulated VRU)',
+            danger_level: 'CAUTION',
+            danger_prob: 0.55,
+            isOpposite: false
+          }));
+        } else {
+          this.entities.push(this.createEntity({
+            name: 'Pedestrian (Sidewalk)',
+            type: 'pedestrian',
+            subType: 'sidewalk_walker',
+            s: spawnS,
+            d: Math.random() > 0.5 ? 6.2 : -6.2,
+            speed: 1.1 + Math.random() * 0.3,
+            length: 0.6,
+            width: 0.5,
+            height: 1.72,
+            semantic_class: 5,
+            confidence: 0.94,
+            complexity: 'Low (VRU)',
+            danger_level: 'SAFE',
+            danger_prob: 0.08,
+            isOpposite: false
+          }));
+        }
+      }
+
+      // Animals: maintain 1
+      if (activeAnimals.length < 1) {
+        const spawnS = sEgo + 48.0 + Math.random() * 35.0;
+        this.entities.push(this.createEntity({
+          name: 'Animal (Canine / Dog)',
+          type: 'animal',
+          subType: 'dog_crosser',
+          s: spawnS,
+          d: Math.random() > 0.5 ? -5.2 : 5.2,
+          speed: 1.8 + Math.random() * 0.8,
+          vLat: (Math.random() > 0.5 ? 1 : -1) * (0.5 + Math.random() * 0.5),
+          length: 0.85,
+          width: 0.35,
+          height: 0.55,
+          semantic_class: 8,
+          confidence: 0.92,
+          complexity: 'Medium (Quadruped Silhouette)',
+          danger_level: 'CAUTION',
+          danger_prob: 0.48,
+          isOpposite: false
+        }));
+      }
+
+      // Static Obstacles: maintain 2
+      if (activeObstacles.length < 2) {
+        const spawnS = sEgo + 55.0 + Math.random() * 35.0;
+        this.entities.push(this.createEntity({
+          name: 'Traffic Cones (Work Zone)',
+          type: 'obstacle',
+          subType: 'traffic_cone',
+          s: spawnS,
+          d: Math.random() > 0.5 ? 3.4 : -3.4,
+          speed: 0.0,
+          length: 0.38,
+          width: 0.38,
+          height: 0.75,
+          semantic_class: 3,
+          confidence: 0.97,
+          complexity: 'Low (Rigid)',
+          danger_level: 'SAFE',
+          danger_prob: 0.12,
+          is_dynamic: false,
+          isOpposite: false
+        }));
+      }
+    }
+
+    findEntityAt(worldCoord, ego) {
+      for (let i = 0; i < this.entities.length; i++) {
+        const ent = this.entities[i];
+        const dist = Math.hypot(worldCoord.x - ent.x, worldCoord.y - ent.y);
+        const hitR = Math.max(2.2, ent.length * 0.75);
+        if (dist <= hitR) {
+          const speed = ent.speed || (ent.vLat ? Math.abs(ent.vLat) : 0.0);
+          let dirText = 'Stationary';
+          if (ent.is_dynamic) {
+            const headingDeg = ((ent.yaw * 180 / Math.PI) % 360 + 360) % 360;
+            dirText = `${headingDeg.toFixed(0)}° (${ent.subType.replace('_', ' ')})`;
+          }
+
+          return {
+            type: 'object',
+            class_name: ent.name,
+            semantic_class: ent.semantic_class,
+            confidence: ent.confidence,
+            distance: ent.distance || Math.hypot(ent.x - ego.x, ent.y - ego.y),
+            is_dynamic: ent.is_dynamic,
+            velocity: [ent.vx || 0.0, ent.vy || 0.0],
+            speed: speed,
+            direction: dirText,
+            complexity: ent.complexity,
+            danger_level: ent.danger_level,
+            danger_prob: ent.danger_prob,
+            resolution: ent.danger_level === 'DANGER' ? 0.05 : (ent.danger_level === 'WARNING' || ent.danger_level === 'CAUTION' ? 0.10 : 0.20),
+            base_elev: ent.base_elev,
+            top_elev: ent.top_elev,
+            height: ent.height,
+            elevation: (ent.base_elev + ent.top_elev) / 2.0,
+            center_world: [ent.x, ent.y, (ent.base_elev + ent.top_elev) / 2.0],
+            dimensions: [ent.length, ent.width, ent.height],
+            e_var: ent.e_var,
+            slope_deg: ent.slope_deg
+          };
+        }
+      }
+      return null;
+    }
+
+    drawLiDARPoints(ctx, worldToCanvas, scale, ego, showSemantics) {
+      ctx.save();
+      for (let i = 0; i < this.entities.length; i++) {
+        const ent = this.entities[i];
+        if (ent.distance > 85.0) continue;
+
+        const cosY = Math.cos(ent.yaw);
+        const sinY = Math.sin(ent.yaw);
+        const pts = ent.localPoints;
+        const color = showSemantics ? (SEM_COLORS[ent.semantic_class] || '#00f0ff') : '#00f0ff';
+        ctx.fillStyle = color;
+
+        const ptSize = ent.distance <= 18.0 ? 2.2 : (ent.distance <= 40.0 ? 1.8 : 1.3);
+
+        for (let k = 0; k < pts.length; k++) {
+          const lp = pts[k];
+          const wx = ent.x + lp[0] * cosY - lp[1] * sinY;
+          const wy = ent.y + lp[0] * sinY + lp[1] * cosY;
+          const p = worldToCanvas(wx, wy);
+          ctx.fillRect(p.px - ptSize / 2, p.py - ptSize / 2, ptSize, ptSize);
+        }
+      }
+      ctx.restore();
+    }
+
+    drawAllActors(ctx, worldToCanvas, scale, ego) {
+      for (let i = 0; i < this.entities.length; i++) {
+        const ent = this.entities[i];
+        if (ent.distance > 90.0) continue;
+
+        const pCanvas = worldToCanvas(ent.x, ent.y);
+        ctx.save();
+        ctx.translate(pCanvas.px, pCanvas.py);
+        ctx.rotate(-ent.yaw);
+
+        if (ent.type === 'vehicle') {
+          this.renderVehicleVisual(ctx, ent, scale);
+        } else if (ent.type === 'pedestrian') {
+          this.renderPedestrianVisual(ctx, ent, scale);
+        } else if (ent.type === 'animal') {
+          this.renderAnimalVisual(ctx, ent, scale);
+        } else {
+          this.renderObstacleVisual(ctx, ent, scale);
+        }
+
+        ctx.restore();
+      }
+    }
+
+    renderVehicleVisual(ctx, ent, scale) {
+      const halfL = (ent.length * scale) / 2;
+      const halfW = (ent.width * scale) / 2;
+      const isLead = ent.subType === 'lead_car';
+      const isOncoming = ent.subType === 'oncoming_car';
+      const isParked = ent.subType === 'parked_car';
+
+      const bodyFill = isOncoming ? '#111827' : (isLead ? '#0f172a' : '#1e293b');
+      const strokeColor = isOncoming ? '#f59e0b' : (isLead ? '#38bdf8' : '#94a3b8');
+
+      // 1. Vehicle Body Chassis
+      ctx.fillStyle = bodyFill;
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(-halfL, -halfW, halfL * 2, halfW * 2, 4);
+      } else {
+        ctx.rect(-halfL, -halfW, halfL * 2, halfW * 2);
+      }
+      ctx.fill();
+      ctx.stroke();
+
+      // 2. Windshield & Rear Window
+      ctx.fillStyle = isOncoming ? 'rgba(245, 158, 11, 0.35)' : 'rgba(56, 189, 248, 0.35)';
+      ctx.fillRect(halfL * 0.1, -halfW * 0.75, halfL * 0.35, halfW * 1.5);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.fillRect(-halfL * 0.55, -halfW * 0.7, halfL * 0.25, halfW * 1.4);
+
+      // 3. Headlights (at +X front)
+      ctx.fillStyle = '#fef08a';
+      ctx.fillRect(halfL - 2, -halfW * 0.85, 3, halfW * 0.45);
+      ctx.fillRect(halfL - 2, halfW * 0.4, 3, halfW * 0.45);
+
+      if (!isParked) {
+        const beamGrad = ctx.createLinearGradient(halfL, 0, halfL + 24, 0);
+        beamGrad.addColorStop(0, 'rgba(254, 240, 138, 0.40)');
+        beamGrad.addColorStop(1, 'rgba(254, 240, 138, 0.0)');
+        ctx.fillStyle = beamGrad;
+        ctx.fillRect(halfL, -halfW * 0.9, 24, halfW * 1.8);
+      }
+
+      // 4. Taillights (at -X rear)
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(-halfL, -halfW * 0.85, 2.5, halfW * 0.4);
+      ctx.fillRect(-halfL, halfW * 0.45, 2.5, halfW * 0.4);
+
+      // 5. Wheels
+      ctx.fillStyle = '#020617';
+      ctx.fillRect(-halfL * 0.65, -halfW - 1.5, halfL * 0.35, 2.5);
+      ctx.fillRect(-halfL * 0.65, halfW - 1.0, halfL * 0.35, 2.5);
+      ctx.fillRect(halfL * 0.35, -halfW - 1.5, halfL * 0.35, 2.5);
+      ctx.fillRect(halfL * 0.35, halfW - 1.0, halfL * 0.35, 2.5);
+
+      // 6. Directional Arrow on Hood
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(halfL * 0.45, 0);
+      ctx.lineTo(halfL * 0.72, 0);
+      ctx.lineTo(halfL * 0.62, -halfW * 0.25);
+      ctx.moveTo(halfL * 0.72, 0);
+      ctx.lineTo(halfL * 0.62, halfW * 0.25);
+      ctx.stroke();
+
+      // 7. Research Callout Bracket
+      ctx.save();
+      ctx.rotate(ent.yaw);
+      this.drawCallout(ctx, halfW + 4, -12, ent.name.split(' ')[0], ent.danger_level, strokeColor);
+      ctx.restore();
+
+      // 8. Refinement Alert Perimeter
+      if (ent.danger_level === 'WARNING' || ent.danger_level === 'DANGER') {
+        ctx.beginPath();
+        ctx.arc(0, 0, (ent.length / 2 + 1.2) * scale, 0, 2 * Math.PI);
+        ctx.strokeStyle = ent.danger_level === 'DANGER' ? 'rgba(239, 68, 68, 0.65)' : 'rgba(245, 158, 11, 0.45)';
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([4, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    renderPedestrianVisual(ctx, ent, scale) {
+      const color = ent.danger_level === 'DANGER' ? '#ef4444' : (ent.danger_level === 'CAUTION' ? '#f59e0b' : '#10b981');
+
+      // Torso / Shoulders bar
+      ctx.fillStyle = color;
+      ctx.fillRect(-3, -7, 6, 14);
+
+      // Head circle
+      ctx.beginPath();
+      ctx.arc(0, 0, 4.2, 0, 2 * Math.PI);
+      ctx.fillStyle = '#f8fafc';
+      ctx.fill();
+
+      // Dynamic stride markers
+      const strideOffset = Math.sin(simTime * 8 + ent.phaseOffset) * 4;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(strideOffset, -8, 2, 0, 2 * Math.PI);
+      ctx.arc(-strideOffset, 8, 2, 0, 2 * Math.PI);
+      ctx.fill();
+
+      // 3D CAD Bounding Box
+      ctx.strokeStyle = color;
+      ctx.lineWidth = ent.danger_level === 'DANGER' ? 1.8 : 1.2;
+      ctx.strokeRect(-10, -10, 20, 20);
+
+      // Research Callout Bracket
+      ctx.save();
+      ctx.rotate(ent.yaw);
+      this.drawCallout(ctx, 12, -12, 'Pedestrian', ent.danger_level, color);
+      ctx.restore();
+
+      // Pulsing Refinement alert bubble if in corridor
+      if (ent.danger_level === 'DANGER') {
+        ctx.beginPath();
+        ctx.arc(0, 0, 3.8 * scale, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.09)';
+        ctx.fill();
+        ctx.setLineDash([]);
+      }
+    }
+
+    renderAnimalVisual(ctx, ent, scale) {
+      const color = ent.danger_level === 'DANGER' ? '#ef4444' : '#f59e0b';
+      const halfL = (ent.length * scale) / 2;
+      const halfW = (ent.width * scale) / 2;
+
+      // 1. Quadruped Torso (Warm Amber Oval)
+      ctx.fillStyle = '#d97706';
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, Math.max(7, halfL * 0.7), Math.max(3.5, halfW), 0, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.stroke();
+
+      // 2. Head with Snout (at +X)
+      ctx.beginPath();
+      ctx.ellipse(halfL * 0.75, 0, Math.max(3.5, halfL * 0.35), Math.max(2.5, halfW * 0.75), 0, 0, 2 * Math.PI);
+      ctx.fillStyle = '#b45309';
+      ctx.fill();
+      ctx.stroke();
+
+      // Snout tip
+      ctx.beginPath();
+      ctx.arc(halfL * 1.05, 0, 1.8, 0, 2 * Math.PI);
+      ctx.fillStyle = '#0f172a';
+      ctx.fill();
+
+      // 3. Pointed Ears (Triangles at +X)
+      ctx.fillStyle = '#92400e';
+      ctx.beginPath();
+      ctx.moveTo(halfL * 0.6, -halfW * 0.8);
+      ctx.lineTo(halfL * 0.85, -halfW * 1.5);
+      ctx.lineTo(halfL * 0.8, -halfW * 0.4);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(halfL * 0.6, halfW * 0.8);
+      ctx.lineTo(halfL * 0.85, halfW * 1.5);
+      ctx.lineTo(halfL * 0.8, halfW * 0.4);
+      ctx.fill();
+
+      // 4. Paws (4 leg markers)
+      const pawW = Math.sin(simTime * 10 + ent.phaseOffset) * 2;
+      ctx.fillStyle = '#78350f';
+      ctx.fillRect(halfL * 0.4 + pawW, -halfW - 2, 2.5, 2.5);
+      ctx.fillRect(halfL * 0.4 - pawW, halfW, 2.5, 2.5);
+      ctx.fillRect(-halfL * 0.5 - pawW, -halfW - 2, 2.5, 2.5);
+      ctx.fillRect(-halfL * 0.5 + pawW, halfW, 2.5, 2.5);
+
+      // 5. Tail (angled line at -X)
+      ctx.strokeStyle = '#d97706';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(-halfL * 0.65, 0);
+      ctx.lineTo(-halfL * 1.1, -halfW * 0.6);
+      ctx.stroke();
+
+      // 6. CAD Bounding Box
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.4;
+      ctx.strokeRect(-halfL - 2, -halfW - 3, (halfL + 2) * 2, (halfW + 3) * 2);
+
+      // 7. Research Callout Bracket
+      ctx.save();
+      ctx.rotate(ent.yaw);
+      this.drawCallout(ctx, halfW + 6, -12, 'Animal: Dog', ent.danger_level, color);
+      ctx.restore();
+
+      // 8. Refinement Alert Bubble if approaching road corridor
+      if (ent.danger_level === 'DANGER' || ent.danger_level === 'CAUTION') {
+        ctx.beginPath();
+        ctx.arc(0, 0, 2.8 * scale, 0, 2 * Math.PI);
+        ctx.strokeStyle = ent.danger_level === 'DANGER' ? 'rgba(239, 68, 68, 0.75)' : 'rgba(245, 158, 11, 0.45)';
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([3, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    renderObstacleVisual(ctx, ent, scale) {
+      if (ent.subType === 'traffic_cone') {
+        const sPx = Math.max(5, ent.length * scale);
+        ctx.fillStyle = '#c2410c';
+        ctx.fillRect(-sPx / 2, -sPx / 2, sPx, sPx);
+        ctx.beginPath();
+        ctx.arc(0, 0, sPx * 0.45, 0, 2 * Math.PI);
+        ctx.fillStyle = '#ea580c';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(0, 0, sPx * 0.28, 0, 2 * Math.PI);
+        ctx.fillStyle = '#f8fafc';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(0, 0, sPx * 0.14, 0, 2 * Math.PI);
+        ctx.fillStyle = '#ea580c';
+        ctx.fill();
+
+        ctx.save();
+        ctx.rotate(ent.yaw);
+        this.drawCallout(ctx, sPx * 0.6, -10, 'Cone', ent.danger_level, '#ea580c');
+        ctx.restore();
+      } else {
+        const bL = ent.length * scale;
+        const bW = Math.max(6, ent.width * scale);
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(-bL / 2, -bW / 2, bL, bW);
+        ctx.strokeStyle = '#f97316';
+        ctx.lineWidth = 2.5;
+        for (let x = -bL / 2; x <= bL / 2; x += 8) {
+          ctx.beginPath();
+          ctx.moveTo(x, -bW / 2);
+          ctx.lineTo(x + 5, bW / 2);
+          ctx.stroke();
+        }
+        ctx.strokeStyle = '#ea580c';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(-bL / 2, -bW / 2, bL, bW);
+
+        ctx.save();
+        ctx.rotate(ent.yaw);
+        this.drawCallout(ctx, bW * 0.6 + 4, -12, 'Barricade', ent.danger_level, '#f97316');
+        ctx.restore();
+      }
+    }
+
+    drawCallout(ctx, ox, oy, label, dangerLevel, accentColor) {
+      const leaderX = ox;
+      const leaderY = oy;
+      const boxX = leaderX + 16;
+      const boxY = leaderY - 12;
+      const boxW = Math.max(68, label.length * 7 + 16);
+      const boxH = 22;
+
+      ctx.strokeStyle = 'rgba(248, 250, 252, 0.75)';
+      ctx.lineWidth = 1.0;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(leaderX, leaderY);
+      ctx.lineTo(boxX, leaderY);
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(10, 16, 28, 0.92)';
+      ctx.fillRect(boxX, boxY, boxW, boxH);
+      ctx.strokeStyle = accentColor || 'rgba(0, 240, 255, 0.7)';
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 8.5px JetBrains Mono, monospace';
+      ctx.fillText(label, boxX + 6, boxY + 10);
+
+      const badgeColor = dangerLevel === 'DANGER' ? '#ef4444' : (dangerLevel === 'WARNING' ? '#f97316' : (dangerLevel === 'CAUTION' ? '#f59e0b' : '#10b981'));
+      ctx.fillStyle = badgeColor;
+      ctx.font = 'bold 7.5px JetBrains Mono, monospace';
+      ctx.fillText(dangerLevel, boxX + 6, boxY + 18);
+    }
+
+    getActiveDynamicCount() {
+      return this.entities.filter(e => e.is_dynamic && e.distance <= 85.0).length;
+    }
+
+    getActiveEntities() {
+      return this.entities;
+    }
+  }
+
+  // Global Encounter Manager Instance
+  window.encounterManager = new EncounterManager();
+
+  // --------------------------------------------------------------------------
   // 4. RADIAL / FOVEATED ADAPTIVE GRID FIELD (MATCHING REFERENCE RESEARCH VISUAL)
   // Concentric Rings: RED (0-10m: 5cm) -> YELLOW (10-30m: 10-20cm) -> BLUE (30-85m: 40-80cm)
   // Dynamic Refinement: High-importance actors refine locally to RED / YELLOW
@@ -1485,22 +2447,27 @@
 
     ctx.save();
 
-    // Check dynamic refinement targets in world space
-    let pedWorld = null;
-    if (simTime >= 70.0 && simTime <= 105.0) {
-      const pProg = (simTime - 70.0) / 35.0;
-      const px = 310.0 + 20.0 * pProg;
-      pedWorld = { x: px, y: 98.0, inLane: (px >= 318.0 && px <= 322.5) };
+    // Pre-calculate angular sectors and ring bounds for active encounter entities
+    const activeRefiners = [];
+    if (window.encounterManager) {
+      const ents = window.encounterManager.getActiveEntities();
+      for (let i = 0; i < ents.length; i++) {
+        const ent = ents[i];
+        const dist = Math.hypot(ent.x - ego.x, ent.y - ego.y);
+        if (dist <= 85.0) {
+          const a = Math.atan2(ent.y - ego.y, ent.x - ego.x);
+          const normA = ((a + yawRad) % (2 * Math.PI) + (2 * Math.PI)) % (2 * Math.PI);
+          const sec = Math.floor(normA / SECTOR_ANGLE);
+          activeRefiners.push({
+            dist,
+            sec,
+            danger: ent.danger_level,
+            type: ent.type,
+            inCorridor: ent.inCorridor
+          });
+        }
+      }
     }
-
-    let oncWorld = null;
-    if (simTime >= 105.0 && simTime <= 145.0) {
-      const vProg = (simTime - 105.0) / 40.0;
-      oncWorld = { x: 316.0, y: 270.0 - 190.0 * vProg };
-    }
-
-    // Static Barrier world coordinate
-    const barrierWorld = { x: 205.0, y: 8.0 };
 
     // Render each annular sector cell in the foveated resolution field
     RADIAL_ZONES.forEach((ring) => {
@@ -1519,40 +2486,25 @@
         const cellWx = ego.x + midR * Math.cos(worldAngle);
         const cellWy = ego.y + midR * Math.sin(worldAngle);
 
-        // Check perception refinement
+        // Check dynamic perception refinement from active encounter refiners
         let isRefined = false;
         let refineType = null;
 
-        if (pedWorld) {
-          const dPed = Math.hypot(pedWorld.x - ego.x, pedWorld.y - ego.y);
-          const aPed = Math.atan2(pedWorld.y - ego.y, pedWorld.x - ego.x);
-          const normPedA = ((aPed + yawRad) % (2 * Math.PI) + (2 * Math.PI)) % (2 * Math.PI);
-          const pedSec = Math.floor(normPedA / SECTOR_ANGLE);
-          if (Math.abs(s - pedSec) <= 1 && ring.r1 <= dPed && ring.r2 >= dPed) {
-            isRefined = true;
-            refineType = pedWorld.inLane ? 'DANGER_VRU' : 'CAUTION_VRU';
-          }
-        }
-
-        if (!isRefined && oncWorld) {
-          const dCar = Math.hypot(oncWorld.x - ego.x, oncWorld.y - ego.y);
-          const aCar = Math.atan2(oncWorld.y - ego.y, oncWorld.x - ego.x);
-          const normCarA = ((aCar + yawRad) % (2 * Math.PI) + (2 * Math.PI)) % (2 * Math.PI);
-          const carSec = Math.floor(normCarA / SECTOR_ANGLE);
-          if (Math.abs(s - carSec) <= 1 && ring.r1 <= dCar && ring.r2 >= dCar) {
-            isRefined = true;
-            refineType = 'ONCOMING';
-          }
-        }
-
-        if (!isRefined) {
-          const dBar = Math.hypot(barrierWorld.x - ego.x, barrierWorld.y - ego.y);
-          const aBar = Math.atan2(barrierWorld.y - ego.y, barrierWorld.x - ego.x);
-          const normBarA = ((aBar + yawRad) % (2 * Math.PI) + (2 * Math.PI)) % (2 * Math.PI);
-          const barSec = Math.floor(normBarA / SECTOR_ANGLE);
-          if (Math.abs(s - barSec) <= 1 && ring.r1 <= dBar && ring.r2 >= dBar) {
-            isRefined = true;
-            refineType = 'BARRIER';
+        for (let k = 0; k < activeRefiners.length; k++) {
+          const ar = activeRefiners[k];
+          if (ring.r1 <= ar.dist && ring.r2 >= ar.dist) {
+            const secDiff = Math.abs(s - ar.sec);
+            if (secDiff <= 1 || secDiff === NUM_SECTORS - 1) {
+              isRefined = true;
+              if (ar.danger === 'DANGER' || ar.inCorridor) {
+                refineType = 'DANGER_VRU';
+                break;
+              } else if (ar.danger === 'WARNING') {
+                refineType = refineType === 'DANGER_VRU' ? refineType : 'ONCOMING';
+              } else if (!refineType) {
+                refineType = (ar.type === 'pedestrian' || ar.type === 'animal') ? 'CAUTION_VRU' : 'BARRIER';
+              }
+            }
           }
         }
 
@@ -1677,147 +2629,23 @@
       const ptSize = dist <= 15.0 ? 2.2 : (dist <= 35.0 ? 1.8 : 1.3);
       ctx.fillRect(p.px - ptSize / 2, p.py - ptSize / 2, ptSize, ptSize);
     }
+
+    // Dynamic Encounter Entity Surface LiDAR returns
+    if (window.encounterManager) {
+      window.encounterManager.drawLiDARPoints(ctx, worldToCanvas, scale, ego, chkSemantics.checked);
+    }
+
     ctx.restore();
   }
 
   // --------------------------------------------------------------------------
-  // 6. DYNAMIC ACTORS (CROSSING PEDESTRIAN, ONCOMING CAR, LEAD CAR)
+  // 6. DYNAMIC ACTORS (VEHICLES, PEDESTRIANS, ANIMALS, OBSTACLES)
   // --------------------------------------------------------------------------
   function drawDynamicActors(ego) {
     ctx.save();
-
-    // Actor A: Crossing Pedestrian at Intersection (Active in Phase 3: t in [70, 105])
-    if (simTime >= 70.0 && simTime <= 105.0) {
-      const pProg = (simTime - 70.0) / 35.0;
-      const pedWx = 310.0 + 20.0 * pProg; // Crossing from West to East
-      const pedWy = 98.0;                 // South crosswalk
-      const pCanvas = worldToCanvas(pedWx, pedWy);
-
-      // In corridor?
-      const inLane = (pedWx >= 318.0 && pedWx <= 322.5);
-      const pedDanger = inLane ? 'DANGER' : 'CAUTION';
-      const pedColor = inLane ? '#ef4444' : '#f59e0b';
-
-      ctx.save();
-      // Draw top-down pedestrian figure (Head + Shoulders)
-      ctx.translate(pCanvas.px, pCanvas.py);
-
-      // Shoulders
-      ctx.fillStyle = pedColor;
-      ctx.fillRect(-5, -2, 10, 4);
-      // Head
-      ctx.beginPath();
-      ctx.arc(0, 0, 3, 0, 2 * Math.PI);
-      ctx.fillStyle = '#f8fafc';
-      ctx.fill();
-
-      // 3D Bounding Box with corner brackets matching reference
-      ctx.strokeStyle = pedColor;
-      ctx.lineWidth = 1.8;
-      ctx.strokeRect(-9, -9, 18, 18);
-
-      // Research Callout: [ Pedestrian ] matching reference image
-      ctx.strokeStyle = 'rgba(248, 250, 252, 0.85)';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.moveTo(9, 0);
-      ctx.lineTo(24, -14);
-      ctx.lineTo(40, -14);
-      ctx.stroke();
-
-      ctx.fillStyle = 'rgba(10, 16, 28, 0.92)';
-      ctx.fillRect(40, -26, 78, 22);
-      ctx.strokeStyle = pedColor;
-      ctx.lineWidth = 1.2;
-      ctx.strokeRect(40, -26, 78, 22);
-
-      ctx.fillStyle = '#f8fafc';
-      ctx.font = 'bold 9px JetBrains Mono, monospace';
-      ctx.fillText('Pedestrian', 46, -11);
-
-      ctx.fillStyle = pedColor;
-      ctx.font = 'bold 7.5px JetBrains Mono, monospace';
-      ctx.fillText(pedDanger, 46, -2);
-
-      // Local Adaptive Refinement Bubble (5cm RED trigger) around DANGER pedestrian
-      if (inLane) {
-        ctx.beginPath();
-        ctx.arc(0, 0, 3.6 * scale, 0, 2 * Math.PI);
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([4, 4]);
-        ctx.stroke();
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.08)';
-        ctx.fill();
-        ctx.setLineDash([]);
-      }
-
-      ctx.restore();
+    if (window.encounterManager) {
+      window.encounterManager.drawAllActors(ctx, worldToCanvas, scale, ego);
     }
-
-    // Actor B: Oncoming Vehicle in Opposite Lane (Phase 4: t in [105, 145])
-    if (simTime >= 105.0 && simTime <= 145.0) {
-      const vProg = (simTime - 105.0) / 40.0;
-      const oncWx = 316.0;                    // Opposite lane (West side)
-      const oncWy = 270.0 - 190.0 * vProg;    // Moving South
-      const oCanvas = worldToCanvas(oncWx, oncWy);
-      const oL = 4.6 * scale;
-      const oW = 2.0 * scale;
-
-      ctx.save();
-      ctx.translate(oCanvas.px, oCanvas.py);
-      ctx.rotate(Math.PI / 2); // Heading South (-90 deg in Cartesian -> +90 screen)
-
-      // Oncoming Car Body
-      ctx.fillStyle = '#1e1b4b';
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 1.6;
-      ctx.fillRect(-oL / 2, -oW / 2, oL, oW);
-      ctx.strokeRect(-oL / 2, -oW / 2, oL, oW);
-
-      // Windshield
-      ctx.fillStyle = 'rgba(245, 158, 11, 0.3)';
-      ctx.fillRect(-oL * 0.1, -oW * 0.35, oL * 0.35, oW * 0.7);
-
-      // Headlights illuminating South
-      ctx.fillStyle = '#fef08a';
-      ctx.fillRect(oL * 0.46, -oW * 0.4, oL * 0.04, oW * 0.2);
-      ctx.fillRect(oL * 0.46, oW * 0.2, oL * 0.04, oW * 0.2);
-
-      // Research Callout [ Vehicle ]
-      ctx.save();
-      ctx.rotate(-Math.PI / 2); // Keep upright
-      ctx.strokeStyle = 'rgba(248, 250, 252, 0.85)';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.moveTo(oW / 2, 0);
-      ctx.lineTo(oW / 2 + 16, -14);
-      ctx.lineTo(oW / 2 + 30, -14);
-      ctx.stroke();
-
-      ctx.fillStyle = 'rgba(10, 16, 28, 0.92)';
-      ctx.fillRect(oW / 2 + 30, -26, 60, 20);
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 1.2;
-      ctx.strokeRect(oW / 2 + 30, -26, 60, 20);
-
-      ctx.fillStyle = '#f8fafc';
-      ctx.font = 'bold 9px JetBrains Mono, monospace';
-      ctx.fillText('Vehicle', oW / 2 + 38, -12);
-      ctx.restore();
-
-      // Refinement bubble
-      ctx.beginPath();
-      ctx.arc(0, 0, 4.0 * scale, 0, 2 * Math.PI);
-      ctx.strokeStyle = 'rgba(245, 158, 11, 0.55)';
-      ctx.lineWidth = 1.2;
-      ctx.setLineDash([4, 4]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      ctx.restore();
-    }
-
     ctx.restore();
   }
 
@@ -2083,6 +2911,12 @@
     const cosA = Math.cos(yawRad);
     const sinA = Math.sin(yawRad);
 
+    // 0. Check Dynamic Encounter Entities (Vehicles, Pedestrians, Animals, Obstacles)
+    if (window.encounterManager) {
+      const hit = window.encounterManager.findEntityAt(worldCoord, ego);
+      if (hit) return hit;
+    }
+
     // 1. Check Dynamic Detected Objects from Current Frame Pipeline
     if (currentFrameData && currentFrameData.detected_objects) {
       for (const obj of currentFrameData.detected_objects) {
@@ -2123,73 +2957,7 @@
       }
     }
 
-    // 2. Check Dynamic World Actors (Crossing Pedestrian & Oncoming Car)
-    // Actor A: Crossing Pedestrian at Intersection (Active in Phase 3: simTime in [70, 105])
-    if (simTime >= 70.0 && simTime <= 105.0) {
-      const pProg = (simTime - 70.0) / 35.0;
-      const pedWx = 310.0 + 20.0 * pProg;
-      const pedWy = 98.0;
-      const distCursor = Math.hypot(worldCoord.x - pedWx, worldCoord.y - pedWy);
-      if (distCursor <= 2.5) {
-        const inLane = (pedWx >= 318.0 && pedWx <= 322.5);
-        const distEgo = Math.hypot(pedWx - ego.x, pedWy - ego.y);
-        return {
-          type: 'object',
-          class_name: 'Pedestrian',
-          semantic_class: 5,
-          confidence: 0.94,
-          distance: distEgo,
-          is_dynamic: true,
-          velocity: [1.3, 0.0],
-          speed: 1.3,
-          direction: 'Eastbound (Crosswalk)',
-          complexity: 'Low (VRU Silhouette)',
-          danger_level: inLane ? 'DANGER' : 'CAUTION',
-          danger_prob: inLane ? 0.92 : 0.61,
-          resolution: 0.05,
-          base_elev: 0.08,
-          top_elev: 1.82,
-          height: 1.74,
-          elevation: 0.95,
-          center_world: [pedWx, pedWy, 0.95],
-          dimensions: [0.6, 0.5, 1.74],
-        };
-      }
-    }
-
-    // Actor B: Oncoming Vehicle in Adjacent Lane (Active in Phase 4: simTime in [105, 145])
-    if (simTime >= 105.0 && simTime <= 145.0) {
-      const cProg = (simTime - 105.0) / 40.0;
-      const carWx = 316.0;
-      const carWy = 250.0 - 110.0 * cProg;
-      const distCursor = Math.hypot(worldCoord.x - carWx, worldCoord.y - carWy);
-      if (distCursor <= 3.2) {
-        const distEgo = Math.hypot(carWx - ego.x, carWy - ego.y);
-        return {
-          type: 'object',
-          class_name: 'Vehicle',
-          semantic_class: 4,
-          confidence: 0.91,
-          distance: distEgo,
-          is_dynamic: true,
-          velocity: [0.0, -14.5],
-          speed: 14.5,
-          direction: 'Southbound (Opposing Corridor)',
-          complexity: 'Medium',
-          danger_level: 'WARNING',
-          danger_prob: 0.74,
-          resolution: 0.10,
-          base_elev: 0.14,
-          top_elev: 1.66,
-          height: 1.52,
-          elevation: 0.90,
-          center_world: [carWx, carWy, 0.90],
-          dimensions: [4.6, 2.0, 1.52],
-        };
-      }
-    }
-
-    // 3. Check Fixed Static Infrastructure in World Map (Poles, Barrier, Parked Cars, Trees, Buildings)
+    // 2. Check Fixed Static Infrastructure in World Map (Poles, Barrier, Parked Cars, Trees, Buildings)
     if (worldMapData) {
       // Barrier
       if (worldMapData.barrier) {
@@ -2469,7 +3237,7 @@
     const m = currentFrameData.metrics;
 
     const ptCount = m.point_count !== undefined ? m.point_count : (m.sampled_points || 13855);
-    const dynCount = m.dynamic_object_count !== undefined ? m.dynamic_object_count : (currentFrameData.detected_objects ? currentFrameData.detected_objects.filter(o => o.is_dynamic).length : 0);
+    const dynCount = window.encounterManager ? window.encounterManager.getActiveDynamicCount() : (m.dynamic_object_count !== undefined ? m.dynamic_object_count : (currentFrameData.detected_objects ? currentFrameData.detected_objects.filter(o => o.is_dynamic).length : 0));
     const activeCells = m.active_adaptive_cells !== undefined ? m.active_adaptive_cells : 1716;
     const uniformCells = m.theoretical_uniform_cells !== undefined ? m.theoretical_uniform_cells : (m.baseline_uniform_cells || 3200000);
     const redPct = m.cell_reduction_percent !== undefined ? m.cell_reduction_percent : (m.reduction_percent || 99.8);
@@ -2507,6 +3275,10 @@
     const ego = getEgoPose(simTime);
     if (metricSpeed) {
       metricSpeed.textContent = `${(ego.speed * 3.6).toFixed(1)} km/h`;
+    }
+
+    if (window.encounterManager) {
+      window.encounterManager.update(dtSec, ego, window.osmRouter);
     }
 
     const keyframeId = Math.min(180, Math.floor(simTime) + 1);
@@ -2869,6 +3641,11 @@
     resizeCanvas();
     setupEvents();
 
+    if (window.encounterManager) {
+      const initEgo = getEgoPose(0);
+      window.encounterManager.seedInitialEncounters(initEgo, window.osmRouter);
+    }
+
     // Launch RAF animation loop and UI immediately on frame 0 (Zero blank-state startup!)
     updateTelemetryUI();
     requestAnimationFrame(animationLoop);
@@ -2903,5 +3680,11 @@
     })();
   }
 
-  init();
+  if (typeof window !== 'undefined' && typeof module === 'undefined') {
+    init();
+  }
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { EncounterManager };
+  }
 })();
