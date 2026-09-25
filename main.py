@@ -84,5 +84,18 @@ def main():
         server.run()
 
 
+# -----------------------------------------------------------------------------
+# Top-level ASGI / FastAPI application instance for Vercel deployment
+# -----------------------------------------------------------------------------
+def get_app():
+    cfg_path = project_root / "config" / "config.yaml"
+    cfg = load_config(cfg_path)
+    cfg.setdefault("dashboard", {})["auto_open_browser"] = False
+    return DashboardServer(cfg).app
+
+
+app = get_app()
+
+
 if __name__ == "__main__":
     main()

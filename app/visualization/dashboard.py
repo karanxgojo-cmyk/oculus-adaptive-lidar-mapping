@@ -115,6 +115,7 @@ class DashboardServer:
             return FileResponse(static_dir / "osm_router.js", media_type="application/javascript")
 
         @self.app.get("/api/status")
+        @self.app.get("/api/status.json")
         @self.app.get("/api/state")
         async def get_status():
             return {
@@ -126,6 +127,7 @@ class DashboardServer:
             }
 
         @self.app.get("/api/world_map")
+        @self.app.get("/api/world_map.json")
         async def get_world_map():
             return self.streamer.get_world_map()
 
@@ -134,6 +136,14 @@ class DashboardServer:
             """Processes and returns telemetry, active cells, objects, and sampled points."""
             json_str = self._compute_and_cache_frame(frame_id, uniform)
             return Response(content=json_str, media_type="application/json")
+
+        @self.app.get("/api/frames/{filename}")
+        async def get_static_frame(filename: str):
+            """Serves precomputed frame JSON files directly if requested."""
+            frame_path = static_dir / "api" / "frames" / filename
+            if frame_path.exists():
+                return FileResponse(frame_path, media_type="application/json")
+            return JSONResponse(status_code=404, content={"error": "Frame not found"})
 
     def run(self):
         """Starts uvicorn server and optionally opens the browser."""
